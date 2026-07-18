@@ -81,15 +81,18 @@ impl Iterator for TwoCycleProbabilities {
 /// # Panics
 /// Panics if `n == 1`, since no derangement of a single element exists.
 pub fn sample_derangement(n: usize) -> Vec<usize> {
-    assert!(n != 1, "no derangement exists for n = 1");
-
     let mut rng = rand::rng();
     sample_derangement_with(n, &mut rng)
 }
 
 /// Samples a uniformly random derangement of `{0, 1, ..., n-1}` using the given
 /// random number generator.
+///
+/// # Panics
+/// Panics if `n == 1`, since no derangement of a single element exists.
 pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec<usize> {
+    assert!(n != 1, "no derangement exists for n = 1");
+
     let mut permutation = (0..n).collect::<Vec<usize>>();
     if n == 0 {
         return permutation;
@@ -104,10 +107,6 @@ pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec
         let i = unmarked.pop().unwrap();
         let j = rng.random_range(..unmarked.len());
         permutation.swap(i, unmarked[j]);
-
-        // Close a 2-cycle with the current element, or leave it in a longer cycle.
-        // `unmarked` is an unordered pool (j is uniform), so the O(1) swap_remove
-        // is equivalent to remove here and keeps each step O(1).
         if rng.random_bool(two_cycle_prob[unmarked.len()]) {
             unmarked.swap_remove(j);
         }
@@ -171,6 +170,12 @@ mod tests {
     #[test]
     fn empty_input() {
         assert_eq!(sample_derangement_with(0, &mut rand::rng()), Vec::<usize>::new());
+    }
+
+    #[test]
+    #[should_panic(expected = "no derangement exists for n = 1")]
+    fn n1_panics() {
+        sample_derangement_with(1, &mut rand::rng());
     }
 
     /// For n = 3 there are exactly two derangements: [1,2,0] and [2,0,1].

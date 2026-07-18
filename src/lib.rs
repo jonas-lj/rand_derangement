@@ -1,6 +1,6 @@
 //! Sampling of uniformly random derangements (permutations with no fixed points),
 //! via a variant of the Martínez–Panholzer–Prodinger algorithm. See
-//! [`TwoCycleProbabilities`] for the per-step probabilities.
+//! [`two_cycle_probabilities`] for the per-step probabilities.
 
 use rand::RngExt;
 
@@ -15,39 +15,14 @@ use rand::RngExt;
 /// `two_cycle(2) = 0`, `two_cycle(3) = 1/3`, ...).
 ///
 /// The sequence is infinite; use [`Iterator::take`] to get a prefix.
-pub struct TwoCycleProbabilities {
-    /// Index of the next value to yield.
-    u: usize,
-    /// The previously yielded value, `two_cycle(u - 1)`.
-    prev: f64,
-}
-
-impl TwoCycleProbabilities {
-    pub fn new() -> Self {
-        Self { u: 0, prev: 0.0 }
-    }
-}
-
-impl Default for TwoCycleProbabilities {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Iterator for TwoCycleProbabilities {
-    type Item = f64;
-
-    fn next(&mut self) -> Option<f64> {
-        // two_cycle(0) = 0 seeds the recursion; every later term follows from it.
-        let value = if self.u == 0 {
-            0.0
-        } else {
-            (1.0 - self.prev) / (self.u as f64 - self.prev)
-        };
-        self.prev = value;
-        self.u += 1;
-        Some(value)
-    }
+pub fn two_cycle_probabilities() -> impl Iterator<Item = f64> {
+    // State is `(u, two_cycle(u))`; the recursion needs the index alongside the
+    // previous value. Seed at `u = 0` and map the tuple down to the probability.
+    std::iter::successors(Some((0usize, 0.0f64)), |&(u, prev)| {
+        let u = u + 1;
+        Some((u, (1.0 - prev) / (u as f64 - prev)))
+    })
+    .map(|(_, prob)| prob)
 }
 
 /// Samples a uniformly random derangement of `{0, 1, ..., n-1}`.
@@ -71,7 +46,7 @@ pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec
         return permutation;
     }
 
-    let two_cycle_prob = TwoCycleProbabilities::new().take(n).collect::<Vec<f64>>();
+    let two_cycle_prob = two_cycle_probabilities().take(n).collect::<Vec<f64>>();
     let mut unmarked = (0..n).collect::<Vec<usize>>();
 
     while unmarked.len() > 1 {

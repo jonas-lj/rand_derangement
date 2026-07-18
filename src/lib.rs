@@ -5,21 +5,24 @@
 //! rejection sampling.
 //!
 //! The only randomness that depends on the subfactorials is a single Bernoulli
-//! trial per step: while `u` elements are still unmarked, we "close" the current
-//! element with probability
+//! trial per step. With `u + 1` elements still in play, the element being placed
+//! either forms a **2-cycle** (a transposition with its partner) or splices into
+//! a longer cycle. It forms a 2-cycle with probability
 //!
 //! ```text
-//! p(u) = d[u-1] / (d[u-1] + d[u]),
+//! two_cycle(u) = d[u-1] / (d[u-1] + d[u]),
 //! ```
 //!
 //! where `d[k]` is the number of derangements of `k` elements (the subfactorial
-//! `!k = round(k!/e)`). This is the same probability as the original
-//! `u * d[u-1] / d[u+1]`, simplified with the recursion `d[u+1] = u*(d[u] + d[u-1])`.
+//! `!k = round(k!/e)`). This follows from the derangement recurrence
+//! `d[u+1] = u*(d[u] + d[u-1])`, whose two terms `u*d[u-1]` and `u*d[u]` count
+//! exactly the 2-cycle and longer-cycle cases; it is the original
+//! `u * d[u-1] / d[u+1]` in simplified form.
 //!
 //! We precompute these probabilities once, in `f64`, with the stable recursion
 //!
 //! ```text
-//! p(1) = 1,   p(u) = (1 - p(u-1)) / (u - p(u-1)),
+//! two_cycle(1) = 1,   two_cycle(u) = (1 - two_cycle(u-1)) / (u - two_cycle(u-1)),
 //! ```
 //!
 //! which never forms the subfactorials themselves — so there are no big integers
@@ -27,11 +30,14 @@
 
 use rand::RngExt;
 
-/// Precomputes `p(u) = d[u-1] / (d[u-1] + d[u])` for `u = 0..n`.
+/// Precomputes `two_cycle(u) = d[u-1] / (d[u-1] + d[u])` for `u = 0..n`: the
+/// probability that, with `u + 1` elements left to place, the current one closes
+/// a 2-cycle rather than extending into a longer cycle.
 ///
-/// Uses the stable float recursion `p(u) = (1 - p(u-1)) / (u - p(u-1))`, seeded
-/// by `p(1) = 1`. Entry `p[0]` is unused (the loop never queries `u = 0`).
-fn mark_probabilities(n: usize) -> Vec<f64> {
+/// Uses the stable float recursion `two_cycle(u) = (1 - two_cycle(u-1)) / (u -
+/// two_cycle(u-1))`, seeded by `two_cycle(1) = 1`. Entry `[0]` is unused (the
+/// loop never queries `u = 0`).
+fn two_cycle_probabilities(n: usize) -> Vec<f64> {
     let mut p = vec![0.0f64; n];
     if n > 1 {
         p[1] = 1.0;
@@ -61,7 +67,7 @@ pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec
         return permutation;
     }
 
-    let prob = mark_probabilities(n);
+    let two_cycle_prob = two_cycle_probabilities(n);
     let mut unmarked = (0..n).collect::<Vec<usize>>();
 
     let mut u = n - 1;
@@ -70,7 +76,8 @@ pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec
         let j = rng.random_range(0..unmarked.len());
         permutation.swap(i, unmarked[j]);
 
-        if rng.random_bool(prob[u]) {
+        // Close a 2-cycle with the current element, or leave it in a longer cycle.
+        if rng.random_bool(two_cycle_prob[u]) {
             unmarked.remove(j);
             u -= 1;
             if u == 0 {

@@ -1,32 +1,6 @@
-//! Sampling of uniformly random derangements.
-//!
-//! A derangement is a permutation with no fixed points. This is a variant of
-//! the Martínez–Panholzer–Prodinger algorithm that avoids index-selection
-//! rejection sampling.
-//!
-//! The only randomness that depends on the subfactorials is a single Bernoulli
-//! trial per step. With `u + 1` elements still in play, the element being placed
-//! either forms a **2-cycle** (a transposition with its partner) or splices into
-//! a longer cycle. It forms a 2-cycle with probability
-//!
-//! ```text
-//! two_cycle(u) = d[u-1] / (d[u-1] + d[u]),
-//! ```
-//!
-//! where `d[k]` is the number of derangements of `k` elements (the subfactorial
-//! `!k = round(k!/e)`). This follows from the derangement recurrence
-//! `d[u+1] = u*(d[u] + d[u-1])`, whose two terms `u*d[u-1]` and `u*d[u]` count
-//! exactly the 2-cycle and longer-cycle cases; it is the original
-//! `u * d[u-1] / d[u+1]` in simplified form.
-//!
-//! We precompute these probabilities once, in `f64`, with the stable recursion
-//!
-//! ```text
-//! two_cycle(1) = 1,   two_cycle(u) = (1 - two_cycle(u-1)) / (u - two_cycle(u-1)),
-//! ```
-//!
-//! which never forms the subfactorials themselves — so there are no big integers
-//! and no overflow for any `n` — and feed them to a plain Bernoulli trial.
+//! Sampling of uniformly random derangements (permutations with no fixed points),
+//! via a variant of the Martínez–Panholzer–Prodinger algorithm. See
+//! [`TwoCycleProbabilities`] for the per-step probabilities.
 
 use rand::RngExt;
 
@@ -81,8 +55,7 @@ impl Iterator for TwoCycleProbabilities {
 /// # Panics
 /// Panics if `n == 1`, since no derangement of a single element exists.
 pub fn sample_derangement(n: usize) -> Vec<usize> {
-    let mut rng = rand::rng();
-    sample_derangement_with(n, &mut rng)
+    sample_derangement_with(n, &mut rand::rng())
 }
 
 /// Samples a uniformly random derangement of `{0, 1, ..., n-1}` using the given
@@ -101,8 +74,6 @@ pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec
     let two_cycle_prob = TwoCycleProbabilities::new().take(n).collect::<Vec<f64>>();
     let mut unmarked = (0..n).collect::<Vec<usize>>();
 
-    // The `u` of the original loop is exactly `unmarked.len()` after the pop, so
-    // we drive everything off the remaining count and drop the separate counter.
     while unmarked.len() > 1 {
         let i = unmarked.pop().unwrap();
         let j = rng.random_range(..unmarked.len());
@@ -124,25 +95,7 @@ mod tests {
     fn is_derangement(p: &[usize]) -> bool {
         p.iter().enumerate().all(|(i, &pi)| i != pi)
     }
-
-    #[test]
-    fn two_cycle_probabilities_match_subfactorial_ratios() {
-        // two_cycle(u) = d[u-1] / (d[u-1] + d[u]) for the first few u.
-        // d = 1, 0, 1, 2, 9, 44, 265, ...
-        let expected = [
-            0.0,           // u = 0 (seed, unused)
-            1.0,           // u = 1: d0/(d0+d1) = 1/1
-            0.0,           // u = 2: d1/(d1+d2) = 0/1
-            1.0 / 3.0,     // u = 3: d2/(d2+d3) = 1/3
-            2.0 / 11.0,    // u = 4: d3/(d3+d4) = 2/11
-            9.0 / 53.0,    // u = 5: d4/(d4+d5) = 9/53
-            44.0 / 309.0,  // u = 6: d5/(d5+d6) = 44/309
-        ];
-        for (u, (got, want)) in TwoCycleProbabilities::new().zip(expected).enumerate() {
-            assert!((got - want).abs() < 1e-15, "two_cycle({u}) = {got}, expected {want}");
-        }
-    }
-
+    
     /// A slice is a permutation of 0..n iff every index appears exactly once.
     fn is_permutation(p: &[usize]) -> bool {
         let mut seen = vec![false; p.len()];

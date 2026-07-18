@@ -30,22 +30,50 @@
 
 use rand::RngExt;
 
-/// Precomputes `two_cycle(u) = d[u-1] / (d[u-1] + d[u])` for `u = 0..n`: the
-/// probability that, with `u + 1` elements left to place, the current one closes
-/// a 2-cycle rather than extending into a longer cycle.
+/// Infinite iterator over the 2-cycle probabilities `two_cycle(u)` for
+/// `u = 0, 1, 2, ...`.
 ///
-/// Uses the stable float recursion `two_cycle(u) = (1 - two_cycle(u-1)) / (u -
-/// two_cycle(u-1))`, seeded by `two_cycle(1) = 1`. Entry `[0]` is unused (the
-/// loop never queries `u = 0`).
-fn two_cycle_probabilities(n: usize) -> Vec<f64> {
-    let mut p = vec![0.0f64; n];
-    if n > 1 {
-        p[1] = 1.0;
+/// `two_cycle(u) = d[u-1] / (d[u-1] + d[u])` is the probability that, with
+/// `u + 1` elements left to place, the current one closes a 2-cycle rather than
+/// extending into a longer cycle. It is generated with the stable float
+/// recursion `two_cycle(u) = (1 - two_cycle(u-1)) / (u - two_cycle(u-1))`, which
+/// runs off the single seed `two_cycle(0) = 0` (giving `two_cycle(1) = 1`,
+/// `two_cycle(2) = 0`, `two_cycle(3) = 1/3`, ...).
+///
+/// The sequence is infinite; use [`Iterator::take`] to get a prefix.
+pub struct TwoCycleProbabilities {
+    /// Index of the next value to yield.
+    u: usize,
+    /// The previously yielded value, `two_cycle(u - 1)`.
+    prev: f64,
+}
+
+impl TwoCycleProbabilities {
+    pub fn new() -> Self {
+        Self { u: 0, prev: 0.0 }
     }
-    for u in 2..n {
-        p[u] = (1.0 - p[u - 1]) / (u as f64 - p[u - 1]);
+}
+
+impl Default for TwoCycleProbabilities {
+    fn default() -> Self {
+        Self::new()
     }
-    p
+}
+
+impl Iterator for TwoCycleProbabilities {
+    type Item = f64;
+
+    fn next(&mut self) -> Option<f64> {
+        // two_cycle(0) = 0 seeds the recursion; every later term follows from it.
+        let value = if self.u == 0 {
+            0.0
+        } else {
+            (1.0 - self.prev) / (self.u as f64 - self.prev)
+        };
+        self.prev = value;
+        self.u += 1;
+        Some(value)
+    }
 }
 
 /// Samples a uniformly random derangement of `{0, 1, ..., n-1}`.
@@ -67,7 +95,7 @@ pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec
         return permutation;
     }
 
-    let two_cycle_prob = two_cycle_probabilities(n);
+    let two_cycle_prob = TwoCycleProbabilities::new().take(n).collect::<Vec<f64>>();
     let mut unmarked = (0..n).collect::<Vec<usize>>();
 
     let mut u = n - 1;
@@ -98,6 +126,24 @@ mod tests {
     /// A permutation is a derangement iff it has no fixed points.
     fn is_derangement(p: &[usize]) -> bool {
         p.iter().enumerate().all(|(i, &pi)| i != pi)
+    }
+
+    #[test]
+    fn two_cycle_probabilities_match_subfactorial_ratios() {
+        // two_cycle(u) = d[u-1] / (d[u-1] + d[u]) for the first few u.
+        // d = 1, 0, 1, 2, 9, 44, 265, ...
+        let expected = [
+            0.0,           // u = 0 (seed, unused)
+            1.0,           // u = 1: d0/(d0+d1) = 1/1
+            0.0,           // u = 2: d1/(d1+d2) = 0/1
+            1.0 / 3.0,     // u = 3: d2/(d2+d3) = 1/3
+            2.0 / 11.0,    // u = 4: d3/(d3+d4) = 2/11
+            9.0 / 53.0,    // u = 5: d4/(d4+d5) = 9/53
+            44.0 / 309.0,  // u = 6: d5/(d5+d6) = 44/309
+        ];
+        for (u, (got, want)) in TwoCycleProbabilities::new().zip(expected).enumerate() {
+            assert!((got - want).abs() < 1e-15, "two_cycle({u}) = {got}, expected {want}");
+        }
     }
 
     /// A slice is a permutation of 0..n iff every index appears exactly once.

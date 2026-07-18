@@ -1,6 +1,6 @@
-# derangements
+# rand_derangement
 
-Sampling of uniformly random derangements (permutations with no fixed points).
+Fast, uniformly random sampling of derangements (permutations with no fixed points).
 
 This is a variant of the Martínez–Panholzer–Prodinger algorithm. With `u + 1`
 elements still in play, the element being placed either forms a **2-cycle** (a
@@ -33,7 +33,7 @@ front rather than generated downward inside the loop.
 ## Usage
 
 ```rust
-use derangements::sample_derangement;
+use rand_derangement::sample_derangement;
 
 let d = sample_derangement(10);
 assert!(d.iter().enumerate().all(|(i, &pi)| i != pi));

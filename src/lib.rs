@@ -13,8 +13,7 @@ use rand::RngExt;
 /// Infinite iterator over the 2-cycle probabilities `two_cycle(u)` for
 /// `u = 0, 1, 2, ...` where `two_cycle(u) = d[u-1] / (d[u-1] + d[u])` is the probability that, with
 /// `u + 1` elements left to place, the current one closes a 2-cycle rather than
-/// extending into a longer cycle. It is generated with the stable float
-/// recursion `two_cycle(u) = (1 - two_cycle(u-1)) / (u - two_cycle(u-1))`.
+/// extending into a longer cycle.
 fn two_cycle_probabilities() -> impl Iterator<Item = f64> {
     successors(Some((0usize, 0.0f64)), |&(mut u, prev)| {
         u += 1;

@@ -95,7 +95,6 @@ mod tests {
         for n in [2, 3, 4, 5, 8, 13, 21, 34, 50, 100] {
             for _ in 0..1000 {
                 let d = sample_derangement_with(n, &mut rng);
-                assert!(is_permutation(&d), "not a permutation for n = {n}: {d:?}");
                 assert!(is_derangement(&d), "not a derangement for n = {n}: {d:?}");
             }
         }

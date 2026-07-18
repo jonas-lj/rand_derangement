@@ -2,6 +2,11 @@
 name = "rand_derangement"
 version = "0.1.0"
 edition = "2024"
+description = "Fast, uniformly random sampling of derangements (permutations with no fixed points)."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jonas-lj/rand_derangement"
+keywords = ["derangement", "permutation", "random", "sampling", "combinatorics"]
+categories = ["algorithms", "mathematics"]
 
 [dependencies]
 rand = "0.10.2"

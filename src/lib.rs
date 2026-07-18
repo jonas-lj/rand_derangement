@@ -2,35 +2,20 @@
 //! via a variant of the Martínez–Panholzer–Prodinger algorithm. See
 //! [`two_cycle_probabilities`] for the per-step probabilities.
 
+use std::iter::successors;
 use rand::RngExt;
 
 /// Infinite iterator over the 2-cycle probabilities `two_cycle(u)` for
-/// `u = 0, 1, 2, ...`.
-///
-/// `two_cycle(u) = d[u-1] / (d[u-1] + d[u])` is the probability that, with
+/// `u = 0, 1, 2, ...` where `two_cycle(u) = d[u-1] / (d[u-1] + d[u])` is the probability that, with
 /// `u + 1` elements left to place, the current one closes a 2-cycle rather than
 /// extending into a longer cycle. It is generated with the stable float
-/// recursion `two_cycle(u) = (1 - two_cycle(u-1)) / (u - two_cycle(u-1))`, which
-/// runs off the single seed `two_cycle(0) = 0` (giving `two_cycle(1) = 1`,
-/// `two_cycle(2) = 0`, `two_cycle(3) = 1/3`, ...).
-///
-/// The sequence is infinite; use [`Iterator::take`] to get a prefix.
+/// recursion `two_cycle(u) = (1 - two_cycle(u-1)) / (u - two_cycle(u-1))`.
 pub fn two_cycle_probabilities() -> impl Iterator<Item = f64> {
-    // State is `(u, two_cycle(u))`; the recursion needs the index alongside the
-    // previous value. Seed at `u = 0` and map the tuple down to the probability.
-    std::iter::successors(Some((0usize, 0.0f64)), |&(u, prev)| {
-        let u = u + 1;
+    successors(Some((0usize, 0.0f64)), |&(mut u, prev)| {
+        u += 1;
         Some((u, (1.0 - prev) / (u as f64 - prev)))
     })
-    .map(|(_, prob)| prob)
-}
-
-/// Samples a uniformly random derangement of `{0, 1, ..., n-1}`.
-///
-/// # Panics
-/// Panics if `n == 1`, since no derangement of a single element exists.
-pub fn sample_derangement(n: usize) -> Vec<usize> {
-    sample_derangement_with(n, &mut rand::rng())
+    .map(|(_, p)| p)
 }
 
 /// Samples a uniformly random derangement of `{0, 1, ..., n-1}` using the given
@@ -39,13 +24,13 @@ pub fn sample_derangement(n: usize) -> Vec<usize> {
 /// # Panics
 /// Panics if `n == 1`, since no derangement of a single element exists.
 pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec<usize> {
-    assert!(n != 1, "no derangement exists for n = 1");
-
-    let mut permutation = (0..n).collect::<Vec<usize>>();
     if n == 0 {
-        return permutation;
+        return Vec::new();
+    } else if n == 1 {
+        panic!("no derangement exists for n = 1");
     }
 
+    let mut permutation = (0..n).collect::<Vec<usize>>();
     let two_cycle_prob = two_cycle_probabilities().take(n).collect::<Vec<f64>>();
     let mut unmarked = (0..n).collect::<Vec<usize>>();
 
@@ -59,6 +44,14 @@ pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec
     }
 
     permutation
+}
+
+/// Samples a uniformly random derangement of `{0, 1, ..., n-1}`.
+///
+/// # Panics
+/// Panics if `n == 1`, since no derangement of a single element exists.
+pub fn sample_derangement(n: usize) -> Vec<usize> {
+    sample_derangement_with(n, &mut rand::rng())
 }
 
 #[cfg(test)]

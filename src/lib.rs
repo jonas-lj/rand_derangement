@@ -70,13 +70,9 @@ pub fn sample_derangement(n: usize) -> Vec<usize> {
 /// index in that range appears exactly once.
 pub fn is_permutation(p: &[usize]) -> bool {
     let mut seen = vec![false; p.len()];
-    for &x in p {
-        if x >= p.len() || seen[x] {
-            return false;
-        }
-        seen[x] = true;
-    }
-    true
+    // `x < len` first so the index is in bounds; `replace` returns the previous
+    // bit, so a repeat (already `true`) fails the check.
+    p.iter().all(|&x| x < p.len() && !std::mem::replace(&mut seen[x], true))
 }
 
 /// Returns `true` iff `p` is a derangement: a permutation of

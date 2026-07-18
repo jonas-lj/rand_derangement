@@ -16,62 +16,30 @@
 //! `!k = round(k!/e)`). This is the same probability as the original
 //! `u * d[u-1] / d[u+1]`, simplified with the recursion `d[u+1] = u*(d[u] + d[u-1])`.
 //!
-//! We evaluate that Bernoulli trial with **integer arithmetic only** — no floating
-//! point — in two regimes:
+//! We precompute these probabilities once, in `f64`, with the stable recursion
 //!
-//! * For small `u` we draw a uniform integer and compare, which is exact.
-//! * For large `u` we use the identity `d[u] = u*d[u-1] + (-1)^u`, giving
-//!   `p(u) = d[u-1] / ((u+1)*d[u-1] + (-1)^u)`, which differs from `1/(u+1)` by
-//!   less than `1/d[u+1]`. By `u = 20` that gap is below `2^-64`, i.e. below the
-//!   resolution of the random number generator, so sampling `1/(u+1)` is exact
-//!   in practice.
+//! ```text
+//! p(1) = 1,   p(u) = (1 - p(u-1)) / (u - p(u-1)),
+//! ```
+//!
+//! which never forms the subfactorials themselves — so there are no big integers
+//! and no overflow for any `n` — and feed them to a plain Bernoulli trial.
 
 use rand::RngExt;
 
-/// Subfactorials `d[k] = !k` for `k = 0..=20`. All fit in a `u64`
-/// (`d[20] ≈ 8.95e17 < 2^63`), which is exactly the range in which we still
-/// sample the Bernoulli trial exactly.
-const SUBFACTORIALS: [u64; 21] = [
-    1,
-    0,
-    1,
-    2,
-    9,
-    44,
-    265,
-    1854,
-    14833,
-    133496,
-    1334961,
-    14684570,
-    176214841,
-    2290792932,
-    32071101049,
-    481066515734,
-    7697064251745,
-    130850092279664,
-    2355301661033953,
-    44750731559645106,
-    895014631192902121,
-];
-
-/// Largest `u` for which we still sample `p(u)` exactly from the table above.
-/// Beyond this, `p(u)` and `1/(u+1)` differ by less than `2^-64`.
-const EXACT_THRESHOLD: usize = 20;
-
-/// Returns `true` with probability `p(u) = d[u-1] / (d[u-1] + d[u])`, using
-/// integer arithmetic only.
-fn should_mark<R: RngExt + ?Sized>(rng: &mut R, u: usize) -> bool {
-    if u <= EXACT_THRESHOLD {
-        // Exact integer Bernoulli trial: accept the first d[u-1] of the
-        // d[u-1] + d[u] equally likely outcomes.
-        let lo = SUBFACTORIALS[u - 1];
-        let hi = SUBFACTORIALS[u]; // u <= 20  =>  u + 1 <= 21, in bounds
-        rng.random_range(0..lo + hi) < lo
-    } else {
-        // p(u) is within 1/d[u+1] < 2^-64 of 1/(u+1), below RNG resolution.
-        rng.random_range(0..=u) == 0
+/// Precomputes `p(u) = d[u-1] / (d[u-1] + d[u])` for `u = 0..n`.
+///
+/// Uses the stable float recursion `p(u) = (1 - p(u-1)) / (u - p(u-1))`, seeded
+/// by `p(1) = 1`. Entry `p[0]` is unused (the loop never queries `u = 0`).
+fn mark_probabilities(n: usize) -> Vec<f64> {
+    let mut p = vec![0.0f64; n];
+    if n > 1 {
+        p[1] = 1.0;
     }
+    for u in 2..n {
+        p[u] = (1.0 - p[u - 1]) / (u as f64 - p[u - 1]);
+    }
+    p
 }
 
 /// Samples a uniformly random derangement of `{0, 1, ..., n-1}`.
@@ -93,6 +61,7 @@ pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec
         return permutation;
     }
 
+    let prob = mark_probabilities(n);
     let mut unmarked = (0..n).collect::<Vec<usize>>();
 
     let mut u = n - 1;
@@ -101,7 +70,7 @@ pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec
         let j = rng.random_range(0..unmarked.len());
         permutation.swap(i, unmarked[j]);
 
-        if should_mark(rng, u) {
+        if rng.random_bool(prob[u]) {
             unmarked.remove(j);
             u -= 1;
             if u == 0 {

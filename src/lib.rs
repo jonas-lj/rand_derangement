@@ -1,6 +1,11 @@
 //! Sampling of uniformly random derangements (permutations with no fixed points),
-//! via a variant of the Martínez–Panholzer–Prodinger algorithm. See
-//! [`two_cycle_probabilities`] for the per-step probabilities.
+//! via a variant of the Martínez–Panholzer–Prodinger algorithm.
+//!
+//! # Reference
+//! Conrado Martínez, Alois Panholzer, and Helmut Prodinger, "Generating Random
+//! Derangements", *Proc. 5th Workshop on Analytic Algorithmics and Combinatorics
+//! (ANALCO)*, SIAM, 2008.
+//! <https://epubs.siam.org/doi/pdf/10.1137/1.9781611972986.7>
 
 use std::iter::successors;
 use rand::RngExt;
@@ -10,7 +15,7 @@ use rand::RngExt;
 /// `u + 1` elements left to place, the current one closes a 2-cycle rather than
 /// extending into a longer cycle. It is generated with the stable float
 /// recursion `two_cycle(u) = (1 - two_cycle(u-1)) / (u - two_cycle(u-1))`.
-pub fn two_cycle_probabilities() -> impl Iterator<Item = f64> {
+fn two_cycle_probabilities() -> impl Iterator<Item = f64> {
     successors(Some((0usize, 0.0f64)), |&(mut u, prev)| {
         u += 1;
         Some((u, (1.0 - prev) / (u as f64 - prev)))
@@ -19,10 +24,7 @@ pub fn two_cycle_probabilities() -> impl Iterator<Item = f64> {
 }
 
 /// Rearranges `data` in place into a uniformly random derangement of its
-/// elements: every element ends up at a position different from where it started.
-///
-/// This is the derangement analogue of a shuffle. `sample_derangement` is just
-/// this applied to the identity `[0, 1, ..., n-1]`.
+/// elements so every element ends up at a position different from where it started.
 ///
 /// # Panics
 /// Panics if `data.len() == 1`, since no derangement of a single element exists.

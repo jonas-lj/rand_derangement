@@ -102,12 +102,14 @@ pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec
     // we drive everything off the remaining count and drop the separate counter.
     while unmarked.len() > 1 {
         let i = unmarked.pop().unwrap();
-        let j = rng.random_range(0..unmarked.len());
+        let j = rng.random_range(..unmarked.len());
         permutation.swap(i, unmarked[j]);
 
         // Close a 2-cycle with the current element, or leave it in a longer cycle.
+        // `unmarked` is an unordered pool (j is uniform), so the O(1) swap_remove
+        // is equivalent to remove here and keeps each step O(1).
         if rng.random_bool(two_cycle_prob[unmarked.len()]) {
-            unmarked.remove(j);
+            unmarked.swap_remove(j);
         }
     }
 

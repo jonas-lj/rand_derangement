@@ -18,31 +18,42 @@ pub fn two_cycle_probabilities() -> impl Iterator<Item = f64> {
     .map(|(_, p)| p)
 }
 
-/// Samples a uniformly random derangement of `{0, 1, ..., n-1}` using the given
-/// random number generator.
+/// Rearranges `data` in place into a uniformly random derangement of its
+/// elements: every element ends up at a position different from where it started.
+///
+/// This is the derangement analogue of a shuffle. `sample_derangement` is just
+/// this applied to the identity `[0, 1, ..., n-1]`.
 ///
 /// # Panics
-/// Panics if `n == 1`, since no derangement of a single element exists.
-pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec<usize> {
+/// Panics if `data.len() == 1`, since no derangement of a single element exists.
+pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
+    let n = data.len();
     if n == 0 {
-        return Vec::new();
-    } else if n == 1 {
-        panic!("no derangement exists for n = 1");
+        return;
     }
+    assert!(n != 1, "no derangement exists for n = 1");
 
-    let mut permutation = (0..n).collect::<Vec<usize>>();
     let two_cycle_prob = two_cycle_probabilities().take(n).collect::<Vec<f64>>();
     let mut unmarked = (0..n).collect::<Vec<usize>>();
 
     while unmarked.len() > 1 {
         let i = unmarked.pop().unwrap();
         let j = rng.random_range(..unmarked.len());
-        permutation.swap(i, unmarked[j]);
+        data.swap(i, unmarked[j]);
         if rng.random_bool(two_cycle_prob[unmarked.len()]) {
             unmarked.swap_remove(j);
         }
     }
+}
 
+/// Samples a uniformly random derangement of `{0, 1, ..., n-1}` using the given
+/// random number generator.
+///
+/// # Panics
+/// Panics if `n == 1`, since no derangement of a single element exists.
+pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec<usize> {
+    let mut permutation = (0..n).collect::<Vec<usize>>();
+    derange(&mut permutation, rng);
     permutation
 }
 
@@ -54,27 +65,29 @@ pub fn sample_derangement(n: usize) -> Vec<usize> {
     sample_derangement_with(n, &mut rand::rng())
 }
 
+/// Returns `true` iff `p` is a permutation of `{0, 1, ..., p.len()-1}`, i.e. every
+/// index in that range appears exactly once.
+pub fn is_permutation(p: &[usize]) -> bool {
+    let mut seen = vec![false; p.len()];
+    for &x in p {
+        if x >= p.len() || seen[x] {
+            return false;
+        }
+        seen[x] = true;
+    }
+    true
+}
+
+/// Returns `true` iff `p` is a derangement: a permutation of
+/// `{0, 1, ..., p.len()-1}` with no fixed point (`p[i] != i` for all `i`).
+pub fn is_derangement(p: &[usize]) -> bool {
+    is_permutation(p) && p.iter().enumerate().all(|(i, &pi)| i != pi)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
-
-    /// A permutation is a derangement iff it has no fixed points.
-    fn is_derangement(p: &[usize]) -> bool {
-        p.iter().enumerate().all(|(i, &pi)| i != pi)
-    }
-    
-    /// A slice is a permutation of 0..n iff every index appears exactly once.
-    fn is_permutation(p: &[usize]) -> bool {
-        let mut seen = vec![false; p.len()];
-        for &x in p {
-            if x >= p.len() || seen[x] {
-                return false;
-            }
-            seen[x] = true;
-        }
-        true
-    }
 
     #[test]
     fn samples_are_valid_derangements() {
@@ -91,6 +104,37 @@ mod tests {
     #[test]
     fn empty_input() {
         assert_eq!(sample_derangement_with(0, &mut rand::rng()), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn predicates() {
+        assert!(is_permutation(&[2, 0, 1]));
+        assert!(!is_permutation(&[0, 0, 1])); // repeat
+        assert!(!is_permutation(&[0, 1, 3])); // out of range
+
+        assert!(is_derangement(&[1, 2, 0]));
+        assert!(!is_derangement(&[0, 2, 1])); // fixed point at 0
+        assert!(!is_derangement(&[1, 1, 0])); // not a permutation
+        assert!(is_derangement(&[]) && is_permutation(&[])); // vacuously true
+    }
+
+    #[test]
+    fn derange_moves_every_element() {
+        let mut rng = rand::rng();
+        // Derange arbitrary (distinct) values and check none stays put.
+        let original: Vec<char> = ('a'..='z').collect();
+        for _ in 0..1000 {
+            let mut data = original.clone();
+            derange(&mut data, &mut rng);
+            assert!(
+                data.iter().zip(&original).all(|(now, before)| now != before),
+                "element left in place: {data:?}"
+            );
+            // still the same multiset of elements
+            let mut sorted = data.clone();
+            sorted.sort_unstable();
+            assert_eq!(sorted, original);
+        }
     }
 
     #[test]

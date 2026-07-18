@@ -9,3 +9,6 @@ rand = "0.10.2"
 [[bench]]
 name = "sampling"
 harness = false
+
+[dev-dependencies]
+criterion = "0.8.2"

@@ -1,40 +1,31 @@
-//! Simple wall-clock benchmark for `sample_derangement` on large inputs.
+//! Criterion benchmark for `sample_derangement` on large inputs.
 //!
-//! Run with `cargo bench` (release mode). Uses a custom harness (no criterion),
-//! so it works on stable Rust.
+//! Run with `cargo bench`. `Throughput::Elements` makes criterion report a
+//! per-element time, which is the interesting figure as `n` grows.
 
 use std::hint::black_box;
-use std::time::Instant;
+use std::time::Duration;
+
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 use derangements::sample_derangement;
 
-fn bench_n(n: usize, iters: usize) {
-    // Warm up once, and sanity-check we're producing a real derangement.
-    let warm = sample_derangement(n);
-    assert!(warm.iter().enumerate().all(|(i, &pi)| i != pi));
+fn bench_sampling(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sample_derangement");
+    // Large inputs are slow per iteration, so keep the sampling budget modest.
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_secs(1));
+    group.measurement_time(Duration::from_secs(3));
 
-    let start = Instant::now();
-    for _ in 0..iters {
-        black_box(sample_derangement(black_box(n)));
+    for n in [1_000usize, 10_000, 100_000, 1_000_000] {
+        group.throughput(Throughput::Elements(n as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
+            b.iter(|| sample_derangement(black_box(n)));
+        });
     }
-    let elapsed = start.elapsed();
 
-    let per_sample = elapsed / iters as u32;
-    let ns_per_elem = elapsed.as_secs_f64() / (iters as f64 * n as f64) * 1e9;
-    println!(
-        "n = {n:>10}  iters = {iters:>5}  per sample = {per_sample:>12.3?}  ({ns_per_elem:5.2} ns/element)"
-    );
+    group.finish();
 }
 
-fn main() {
-    println!("derangement sampling benchmark\n");
-    for &(n, iters) in &[
-        (1_000usize, 5_000usize),
-        (10_000, 1_000),
-        (100_000, 100),
-        (1_000_000, 20),
-        (10_000_000, 3),
-    ] {
-        bench_n(n, iters);
-    }
-}
+criterion_group!(benches, bench_sampling);
+criterion_main!(benches);

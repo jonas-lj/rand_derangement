@@ -98,21 +98,17 @@ pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec
     let two_cycle_prob = TwoCycleProbabilities::new().take(n).collect::<Vec<f64>>();
     let mut unmarked = (0..n).collect::<Vec<usize>>();
 
-    let mut u = n - 1;
-    while u > 0 {
+    // The `u` of the original loop is exactly `unmarked.len()` after the pop, so
+    // we drive everything off the remaining count and drop the separate counter.
+    while unmarked.len() > 1 {
         let i = unmarked.pop().unwrap();
         let j = rng.random_range(0..unmarked.len());
         permutation.swap(i, unmarked[j]);
 
         // Close a 2-cycle with the current element, or leave it in a longer cycle.
-        if rng.random_bool(two_cycle_prob[u]) {
+        if rng.random_bool(two_cycle_prob[unmarked.len()]) {
             unmarked.remove(j);
-            u -= 1;
-            if u == 0 {
-                break;
-            }
         }
-        u -= 1;
     }
 
     permutation

@@ -8,6 +8,7 @@
 //! <https://epubs.siam.org/doi/pdf/10.1137/1.9781611972986.7>
 
 use std::iter::successors;
+use std::ops::Index;
 use rand::RngExt;
 
 /// Infinite iterator over the 2-cycle probabilities `two_cycle(u)` for
@@ -52,23 +53,23 @@ pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
 ///
 /// # Panics
 /// Panics if `n == 1`, since no derangement of a single element exists.
-pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Vec<usize> {
+pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
     let mut permutation = (0..n).collect::<Vec<usize>>();
     derange(&mut permutation, rng);
-    permutation
+    Permutation(permutation)
 }
 
 /// Samples a uniformly random derangement of `{0, 1, ..., n-1}`.
 ///
 /// # Panics
 /// Panics if `n == 1`, since no derangement of a single element exists.
-pub fn sample_derangement(n: usize) -> Vec<usize> {
+pub fn sample_derangement(n: usize) -> Permutation {
     sample_derangement_with(n, &mut rand::rng())
 }
 
 /// Returns `true` iff `p` is a permutation of `{0, 1, ..., p.len()-1}`, i.e. every
 /// index in that range appears exactly once.
-pub fn is_permutation(p: &[usize]) -> bool {
+fn is_permutation(p: &[usize]) -> bool {
     let mut seen = vec![false; p.len()];
     // `x < len` first so the index is in bounds; `replace` returns the previous
     // bit, so a repeat (already `true`) fails the check.
@@ -81,6 +82,162 @@ pub fn is_derangement(p: &[usize]) -> bool {
     is_permutation(p) && p.iter().enumerate().all(|(i, &pi)| i != pi)
 }
 
+/// A permutation of `{0, 1, ..., n-1}`, represented by its map: element `i` maps
+/// to `self[i]`. Valid by construction — built by [`sample_derangement`] and
+/// friends, or checked via [`Permutation::try_new`] / `TryFrom<Vec<usize>>`.
+///
+/// Derefs to `[usize]`, so slice methods and indexing (`perm[i]`) work directly.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Permutation(Vec<usize>);
+
+impl Permutation {
+    /// Wraps `map` after checking it is a permutation of `{0, ..., map.len()-1}`.
+    pub fn try_new(map: Vec<usize>) -> Result<Self, NotAPermutation> {
+        if is_permutation(&map) {
+            Ok(Self(map))
+        } else {
+            Err(NotAPermutation)
+        }
+    }
+
+    /// The inverse permutation, satisfying `self.inverse()[self[i]] == i`.
+    pub fn inverse(&self) -> Permutation {
+        let mut inverse = vec![0usize; self.0.len()];
+        for (i, &pi) in self.0.iter().enumerate() {
+            inverse[pi] = i;
+        }
+        Permutation(inverse)
+    }
+
+    /// Applies the permutation to `data`, returning a new vector `out` with
+    /// `out[i] = data[self[i]]`.
+    ///
+    /// # Panics
+    /// Panics if `data.len() != self.len()`.
+    pub fn apply<T: Clone>(&self, data: &[T]) -> Vec<T> {
+        assert_eq!(
+            data.len(),
+            self.len(),
+            "data length must match permutation length"
+        );
+        self.0.iter().map(|&i| data[i].clone()).collect()
+    }
+
+    /// Applies the permutation to `data` in place: afterwards `data[i]` holds the
+    /// element that was at `data[self[i]]`. The in-place equivalent of [`apply`],
+    /// but by rotating each cycle with swaps, so no `T: Clone` bound is needed.
+    ///
+    /// [`apply`]: Permutation::apply
+    ///
+    /// # Panics
+    /// Panics if `data.len() != self.len()`.
+    pub fn apply_mut<T>(&self, data: &mut [T]) {
+        assert_eq!(
+            data.len(),
+            self.len(),
+            "data length must match permutation length"
+        );
+        let n = self.len();
+        let mut seen = vec![false; n];
+        for start in 0..n {
+            if seen[start] {
+                continue;
+            }
+            // Rotate the cycle through `start` by one, so each position ends up
+            // with the value of its successor `self[cur]`.
+            let mut cur = start;
+            seen[cur] = true;
+            loop {
+                let next = self.0[cur];
+                if next == start {
+                    break;
+                }
+                data.swap(cur, next);
+                seen[next] = true;
+                cur = next;
+            }
+        }
+    }
+
+    /// Returns `true` iff this permutation has no fixed point (`self[i] != i`).
+    pub fn is_derangement(&self) -> bool {
+        is_derangement(&self.0)
+    }
+
+    /// Consumes the permutation, returning the underlying map.
+    pub fn into_vec(self) -> Vec<usize> {
+        self.0
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl Index<usize> for Permutation {
+    type Output = usize;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl std::ops::Deref for Permutation {
+    type Target = [usize];
+    fn deref(&self) -> &[usize] {
+        &self.0
+    }
+}
+
+impl TryFrom<Vec<usize>> for Permutation {
+    type Error = NotAPermutation;
+    fn try_from(map: Vec<usize>) -> Result<Self, NotAPermutation> {
+        Self::try_new(map)
+    }
+}
+
+/// Formats the permutation in cycle notation, e.g. `(0 2 1)(3 4)`. Fixed points
+/// appear as singleton cycles, so the identity of size 3 is `(0)(1)(2)`.
+impl std::fmt::Display for Permutation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut seen = vec![false; self.0.len()];
+        for start in 0..self.0.len() {
+            if seen[start] {
+                continue;
+            }
+            write!(f, "(")?;
+            let mut cur = start;
+            loop {
+                seen[cur] = true;
+                write!(f, "{cur}")?;
+                cur = self.0[cur];
+                if cur == start {
+                    break;
+                }
+                write!(f, " ")?;
+            }
+            write!(f, ")")?;
+        }
+        Ok(())
+    }
+}
+
+/// Error returned when a `Vec<usize>` is not a valid permutation of `{0, ..., n-1}`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NotAPermutation;
+
+impl std::fmt::Display for NotAPermutation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("not a valid permutation of {0, ..., n-1}")
+    }
+}
+
+impl std::error::Error for NotAPermutation {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,14 +249,76 @@ mod tests {
         for n in [2, 3, 4, 5, 8, 13, 21, 34, 50, 100] {
             for _ in 0..1000 {
                 let d = sample_derangement_with(n, &mut rng);
-                assert!(is_derangement(&d), "not a derangement for n = {n}: {d:?}");
+                assert!(d.is_derangement(), "not a derangement for n = {n}: {d:?}");
             }
         }
     }
 
     #[test]
     fn empty_input() {
-        assert_eq!(sample_derangement_with(0, &mut rand::rng()), Vec::<usize>::new());
+        assert!(sample_derangement_with(0, &mut rand::rng()).is_empty());
+    }
+
+    #[test]
+    fn permutation_type() {
+        // Validation via try_new / TryFrom.
+        assert!(Permutation::try_new(vec![2, 0, 1]).is_ok());
+        assert_eq!(Permutation::try_new(vec![0, 0]), Err(NotAPermutation));
+        assert!(Permutation::try_from(vec![1, 2, 3]).is_err()); // out of range
+
+        let p = Permutation::try_new(vec![1, 2, 0]).unwrap();
+
+        // Deref: indexing and slice methods.
+        assert_eq!(p[0], 1);
+        assert_eq!(p.len(), 3);
+        assert!(p.is_derangement());
+
+        // inverse ∘ p == identity.
+        let inv = p.inverse();
+        for i in 0..p.len() {
+            assert_eq!(inv[p[i]], i);
+            assert_eq!(p[inv[i]], i);
+        }
+
+        // apply: out[i] = data[p[i]].
+        let data = ['a', 'b', 'c'];
+        assert_eq!(p.apply(&data), vec!['b', 'c', 'a']);
+
+        // Display in cycle notation.
+        assert_eq!(p.to_string(), "(0 1 2)");
+        let two_cycles = Permutation::try_new(vec![1, 0, 3, 2]).unwrap();
+        assert_eq!(two_cycles.to_string(), "(0 1)(2 3)");
+
+        // into_inner round-trips.
+        assert_eq!(p.into_vec(), vec![1, 2, 0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "data length must match permutation length")]
+    fn apply_length_mismatch_panics() {
+        let p = Permutation::try_new(vec![1, 2, 0]).unwrap();
+        p.apply(&[1, 2]);
+    }
+
+    #[test]
+    fn apply_mut_matches_apply() {
+        let mut rng = rand::rng();
+        for n in [2usize, 3, 5, 8, 50] {
+            let p = sample_derangement_with(n, &mut rng);
+            let data: Vec<usize> = (0..n).map(|i| i * 10).collect();
+
+            let out = p.apply(&data);
+            let mut in_place = data.clone();
+            p.apply_mut(&mut in_place);
+
+            assert_eq!(in_place, out, "apply_mut disagrees with apply for n = {n}");
+        }
+
+        // Concrete check, incl. a 2-cycle + a longer cycle + a fixed point.
+        let p = Permutation::try_new(vec![0, 2, 3, 1]).unwrap();
+        let mut data = ['a', 'b', 'c', 'd'];
+        p.apply_mut(&mut data);
+        assert_eq!(data, ['a', 'c', 'd', 'b']); // out[i] = old[p[i]]
     }
 
     #[test]
@@ -144,7 +363,7 @@ mod tests {
     #[test]
     fn distribution_is_uniform_for_n3() {
         let mut rng = rand::rng();
-        let mut counts: HashMap<Vec<usize>, u32> = HashMap::new();
+        let mut counts: HashMap<Permutation, u32> = HashMap::new();
         let trials = 200_000;
         for _ in 0..trials {
             *counts.entry(sample_derangement_with(3, &mut rng)).or_default() += 1;
@@ -161,7 +380,7 @@ mod tests {
     #[test]
     fn distribution_is_uniform_for_n4() {
         let mut rng = rand::rng();
-        let mut counts: HashMap<Vec<usize>, u32> = HashMap::new();
+        let mut counts: HashMap<Permutation, u32> = HashMap::new();
         let trials = 900_000;
         for _ in 0..trials {
             *counts.entry(sample_derangement_with(4, &mut rng)).or_default() += 1;

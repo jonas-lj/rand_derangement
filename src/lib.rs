@@ -141,7 +141,8 @@ impl Permutation {
     pub fn parity(&self) -> Parity {
         let mut cycle_count = 0;
         walk_cycles!(self, cycle => cycle_count += 1);
-        if (self.len() - cycle_count).is_multiple_of(2) {
+        // Even iff the number of transpositions (n - #cycles) has a zero low bit.
+        if (self.len() - cycle_count) & 1 == 0 {
             Parity::Even
         } else {
             Parity::Odd

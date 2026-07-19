@@ -100,12 +100,13 @@ impl Permutation {
         }
     }
 
-    /// Iterates over the cycles of the permutation, each beginning at its smallest
-    /// element.
-    pub fn cycles(&self) -> impl Iterator<Item = Cycle> {
+    /// The cycles of the permutation, each beginning at its smallest element.
+    /// Fixed points appear as singleton cycles, so the cycles partition
+    /// `{0, ..., n-1}`.
+    pub fn cycles(&self) -> Vec<Cycle> {
         let mut cycles = Vec::new();
         self.for_each_cycle(|elements| cycles.push(Cycle { elements: elements.to_vec() }));
-        cycles.into_iter()
+        cycles
     }
 
     /// The parity (sign) of the permutation.
@@ -539,7 +540,7 @@ mod tests {
     #[test]
     fn cycles_decomposition() {
         // Cycles compared by their element vectors.
-        let collect = |p: &Permutation| p.cycles().map(Cycle::into_vec).collect::<Vec<_>>();
+        let collect = |p: &Permutation| p.cycles().into_iter().map(Cycle::into_vec).collect::<Vec<_>>();
 
         // one long cycle
         assert_eq!(collect(&Permutation::try_new(vec![1, 2, 0]).unwrap()), vec![vec![0, 1, 2]]);
@@ -555,24 +556,24 @@ mod tests {
         );
         // identity => all singletons; empty => no cycles
         assert_eq!(collect(&Permutation::identity(3)), vec![vec![0], vec![1], vec![2]]);
-        assert_eq!(Permutation::identity(0).cycles().count(), 0);
+        assert!(Permutation::identity(0).cycles().is_empty());
 
         // Cycle Display uses cycle notation; Deref gives slice access.
-        let c = Permutation::try_new(vec![1, 2, 0]).unwrap().cycles().next().unwrap();
+        let c = Permutation::try_new(vec![1, 2, 0]).unwrap().cycles().remove(0);
         assert_eq!(c.to_string(), "(0 1 2)");
         assert_eq!(c.len(), 3);
 
         // A cycle can be applied on its own, and to any slice long enough to
         // contain its indices (extra tail entries are left untouched).
-        let cyc = Permutation::try_new(vec![1, 2, 0, 3]).unwrap().cycles().next().unwrap();
+        let cyc = Permutation::try_new(vec![1, 2, 0, 3]).unwrap().cycles().remove(0);
         assert_eq!(cyc.len(), 3);
         let mut data = ['a', 'b', 'c', 'd', 'e'];
         cyc.apply_mut(&mut data);
         assert_eq!(data, ['b', 'c', 'a', 'd', 'e']); // positions 0,1,2 rotated; 3,4 untouched
 
-        // Cycles partition {0, ..., n-1} for a random permutation (IntoIterator).
+        // Cycles partition {0, ..., n-1} for a random permutation.
         let p = sample_permutation_with(50, &mut rand::rng());
-        let mut all: Vec<usize> = p.cycles().flatten().collect();
+        let mut all: Vec<usize> = p.cycles().into_iter().flatten().collect();
         all.sort_unstable();
         assert_eq!(all, (0..50).collect::<Vec<_>>());
     }
@@ -587,7 +588,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "cycle indices must be within the data length")]
     fn cycle_apply_mut_out_of_bounds_panics() {
-        let c = Permutation::try_new(vec![1, 2, 0]).unwrap().cycles().next().unwrap();
+        let c = Permutation::try_new(vec![1, 2, 0]).unwrap().cycles().remove(0);
         c.apply_mut(&mut [1, 2]); // cycle touches index 2, but data.len() == 2
     }
 

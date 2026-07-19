@@ -40,6 +40,31 @@ impl Permutation {
         Permutation(inverse)
     }
 
+    /// Inverts the permutation in place, leaving `self` equal to what
+    /// [`inverse`](Permutation::inverse) would return, without allocating a new map.
+    pub fn inverse_mut(&mut self) {
+        let n = self.0.len();
+        let mut seen = vec![false; n];
+        for start in 0..n {
+            if seen[start] {
+                continue;
+            }
+            // Reverse this cycle in place: each element now maps to its
+            // predecessor. Save the successor before overwriting it.
+            seen[start] = true;
+            let mut prev = start;
+            let mut cur = self.0[start];
+            while cur != start {
+                seen[cur] = true;
+                let next = self.0[cur];
+                self.0[cur] = prev;
+                prev = cur;
+                cur = next;
+            }
+            self.0[start] = prev;
+        }
+    }
+
     /// The composition `self ∘ other`.
     ///
     /// # Panics
@@ -602,6 +627,25 @@ mod tests {
         assert_eq!(parity(vec![1, 2, 0]), Parity::Even); // a 3-cycle = 2 transpositions
         assert_eq!(parity(vec![1, 0, 3, 2]), Parity::Even); // two transpositions
         assert_eq!(parity(vec![]), Parity::Even); // empty is even
+    }
+
+    #[test]
+    fn inverse_mut_matches_inverse() {
+        let mut rng = rand::rng();
+        for n in [0usize, 1, 2, 3, 5, 8, 30] {
+            let p = sample_permutation_with(n, &mut rng);
+
+            let mut q = p.clone();
+            q.inverse_mut();
+            assert_eq!(q, p.inverse(), "inverse_mut disagrees with inverse for n = {n}");
+
+            // p ∘ p⁻¹ == identity.
+            assert_eq!(p.compose(&q), Permutation::identity(n));
+
+            // Inverting twice returns the original.
+            q.inverse_mut();
+            assert_eq!(q, p);
+        }
     }
 
     #[test]

@@ -4,19 +4,11 @@
 //! - [`Permutation::sample_permutation`] / [`Permutation::sample_derangement`]
 //!   draw a uniformly random permutation / derangement.
 //! - [`shuffle`] / [`derange`] do the same in place on an arbitrary slice.
-//! - [`Permutation::all`] / [`Permutation::all_derangements`] enumerate every
-//!   permutation / derangement (Heap's algorithm), for small `n`.
 //! - [`Permutation`] is a validated wrapper offering [`apply`](Permutation::apply),
 //!   [`inverse`](Permutation::inverse), cycle-notation `Display`, and more.
 //!
 //! Permutations use a Fisher–Yates shuffle, and derangements use a variant of the
 //! Martínez–Panholzer–Prodinger algorithm (see [`derange`] for the reference).
-//!
-//! # Reference
-//! Conrado Martínez, Alois Panholzer, and Helmut Prodinger, "Generating Random
-//!  Derangements", *Proc. 5th Workshop on Analytic Algorithmics and Combinatorics
-//! (ANALCO)*, SIAM, 2008.
-//! <https://epubs.siam.org/doi/pdf/10.1137/1.9781611972986.7>
 
 use rand::RngExt;
 use std::iter::successors;
@@ -35,6 +27,12 @@ pub fn shuffle<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
 ///
 /// # Panics
 /// Panics if `data.len() == 1`, since no derangement of a single element exists.
+///
+/// # Reference
+/// Conrado Martínez, Alois Panholzer, and Helmut Prodinger, "Generating Random
+/// Derangements", *Proc. 5th Workshop on Analytic Algorithmics and Combinatorics
+/// (ANALCO)*, SIAM, 2008.
+/// <https://epubs.siam.org/doi/pdf/10.1137/1.9781611972986.7>
 pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
     let n = data.len();
     if n == 0 {
@@ -123,25 +121,6 @@ impl Permutation {
         Permutation(permutation)
     }
 
-    /// Iterates over all `n!` permutations of `{0, 1, ..., n-1}` via Heap's
-    /// algorithm (each successive permutation differs by a single transposition).
-    /// Only practical for small `n`, as the count grows factorially.
-    pub fn all(n: usize) -> Permutations {
-        Permutations {
-            perm: (0..n).collect(),
-            counter: vec![0; n],
-            i: 1,
-            started: false,
-        }
-    }
-
-    /// Iterates over all derangements of `{0, 1, ..., n-1}`. This just filters
-    /// [`all`](Permutation::all), so it still steps through every one of the `n!`
-    /// permutations, keeping the fixed-point-free ones.
-    pub fn all_derangements(n: usize) -> impl Iterator<Item = Permutation> {
-        Self::all(n).filter(Permutation::is_derangement)
-    }
-
     /// The inverse permutation, satisfying `self.inverse()[self[i]] == i`.
     pub fn inverse(&self) -> Permutation {
         let mut inverse = vec![0usize; self.0.len()];
@@ -154,6 +133,9 @@ impl Permutation {
     /// Inverts the permutation in place, leaving `self` equal to what
     /// [`inverse`](Permutation::inverse) would return, without allocating a new map.
     pub fn inverse_mut(&mut self) {
+        // Reverse each cycle: every element is repointed to its predecessor. Sound
+        // in place because a cycle's positions are disjoint from every later cycle,
+        // so rewriting them cannot disturb the remaining discovery.
         walk_cycles!(self, cycle => {
             let last = cycle[cycle.len() - 1];
             for pair in cycle.windows(2) {
@@ -191,6 +173,7 @@ impl Permutation {
     pub fn parity(&self) -> Parity {
         let mut cycle_count = 0;
         walk_cycles!(self, cycle => cycle_count += 1);
+        // Even iff the number of transpositions (n - #cycles) has a zero low bit.
         if (self.len() - cycle_count) & 1 == 0 {
             Parity::Even
         } else {
@@ -327,48 +310,6 @@ impl Iterator for Cycles<'_> {
     }
 }
 
-/// Iterator over all `n!` permutations of `{0, 1, ..., n-1}` in Heap's-algorithm
-/// order, returned by [`Permutation::all`].
-pub struct Permutations {
-    perm: Vec<usize>,
-    /// Heap's mixed-radix counter; `counter[i]` tracks progress at "depth" `i`.
-    counter: Vec<usize>,
-    /// Current depth (stack pointer analog).
-    i: usize,
-    /// Whether the initial (identity) permutation has been yielded yet.
-    started: bool,
-}
-
-impl Iterator for Permutations {
-    type Item = Permutation;
-
-    fn next(&mut self) -> Option<Permutation> {
-        // Heap's algorithm emits the starting arrangement first, then each swap.
-        if !self.started {
-            self.started = true;
-            return Some(Permutation(self.perm.clone()));
-        }
-        let n = self.perm.len();
-        while self.i < n {
-            if self.counter[self.i] < self.i {
-                // Even depth swaps in the first element, odd depth swaps in c[i].
-                let j = if self.i & 1 == 0 {
-                    0
-                } else {
-                    self.counter[self.i]
-                };
-                self.perm.swap(j, self.i);
-                self.counter[self.i] += 1;
-                self.i = 1;
-                return Some(Permutation(self.perm.clone()));
-            }
-            self.counter[self.i] = 0;
-            self.i += 1;
-        }
-        None
-    }
-}
-
 /// A single cycle of a permutation: the elements it moves, in cyclic order.
 /// Always non-empty (a fixed point is a cycle of length 1). Derefs to `[usize]`,
 /// so `len()`, indexing, and other slice methods work directly.
@@ -502,31 +443,7 @@ fn lcm(a: usize, b: usize) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::{HashMap, HashSet};
-
-    #[test]
-    fn all_permutations_via_heaps() {
-        let factorial = [1usize, 1, 2, 6, 24, 120];
-        for (n, &expected) in factorial.iter().enumerate() {
-            let perms: Vec<Permutation> = Permutation::all(n).collect();
-            // Every one is a valid permutation.
-            assert!(perms.iter().all(|p| is_permutation(p)));
-            // Exactly n! of them, all distinct.
-            let distinct: HashSet<&Permutation> = perms.iter().collect();
-            assert_eq!(distinct.len(), expected, "wrong count for n = {n}");
-        }
-    }
-
-    #[test]
-    fn all_derangements_via_filter() {
-        // Subfactorials: !n = 1, 0, 1, 2, 9, 44.
-        let subfactorial = [1usize, 0, 1, 2, 9, 44];
-        for (n, &expected) in subfactorial.iter().enumerate() {
-            let ds: Vec<Permutation> = Permutation::all_derangements(n).collect();
-            assert!(ds.iter().all(|p| p.is_derangement()));
-            assert_eq!(ds.len(), expected, "wrong derangement count for n = {n}");
-        }
-    }
+    use std::collections::HashMap;
 
     #[test]
     fn samples_are_valid_derangements() {

@@ -82,8 +82,7 @@ impl Permutation {
         })
     }
 
-    /// The parity (sign) of the permutation. A cycle of length `k` decomposes
-    /// into `k - 1` transpositions, so the parity is `(symbols - #cycles) mod 2`.
+    /// The parity (sign) of the permutation.
     pub fn parity(&self) -> Parity {
         let transpositions = self.symbols() - self.cycles().count();
         if transpositions.is_multiple_of(2) {

@@ -20,6 +20,12 @@ use rand::RngExt;
 pub struct Permutation(Vec<usize>);
 
 impl Permutation {
+    /// The identity permutation of `{0, 1, ..., n-1}`, mapping every element to
+    /// itself (`self[i] == i`).
+    pub fn identity(n: usize) -> Permutation {
+        Permutation((0..n).collect())
+    }
+
     /// Wraps `map` after checking it is a permutation of `{0, ..., map.len()-1}`.
     pub fn try_new(map: Vec<usize>) -> Result<Self, NotAPermutation> {
         if is_permutation(&map) {
@@ -244,8 +250,6 @@ pub fn sample_permutation(n: usize) -> Permutation {
 /// index in that range appears exactly once.
 fn is_permutation(p: &[usize]) -> bool {
     let mut seen = vec![false; p.len()];
-    // `x < len` first so the index is in bounds; `replace` returns the previous
-    // bit, so a repeat (already `true`) fails the check.
     p.iter().all(|&x| x < p.len() && !std::mem::replace(&mut seen[x], true))
 }
 
@@ -305,6 +309,18 @@ mod tests {
             let freq = c as f64 / trials as f64;
             assert!((freq - expected).abs() < 0.01, "permutation {p:?} had frequency {freq}");
         }
+    }
+
+    #[test]
+    fn identity_maps_each_element_to_itself() {
+        let id = Permutation::identity(4);
+        assert_eq!(id.to_vec(), vec![0, 1, 2, 3]);
+        assert!((0..4).all(|i| id[i] == i));
+        assert!(!id.is_derangement());
+        // identity ∘ data == data
+        assert_eq!(id.apply(&['a', 'b', 'c', 'd']), vec!['a', 'b', 'c', 'd']);
+        // empty identity is valid.
+        assert!(Permutation::identity(0).is_empty());
     }
 
     #[test]

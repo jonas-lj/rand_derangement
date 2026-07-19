@@ -43,10 +43,10 @@ impl Permutation {
         Permutation(inverse)
     }
 
-    /// Iterates over the cycles of the permutation, each yielded as a `Vec<usize>`
-    /// beginning at its smallest element. Fixed points appear as singleton cycles,
-    /// so the cycles partition `{0, ..., n-1}`.
-    pub fn cycles(&self) -> impl Iterator<Item = Vec<usize>> + '_ {
+    /// Iterates over the cycles of the permutation, each beginning at its smallest
+    /// element. Fixed points appear as singleton cycles, so the cycles partition
+    /// `{0, ..., n-1}`.
+    pub fn cycles(&self) -> impl Iterator<Item = Cycle> + '_ {
         let mut seen = vec![false; self.0.len()];
         let mut start = 0;
         std::iter::from_fn(move || {
@@ -64,7 +64,7 @@ impl Permutation {
                 cycle.push(cur);
                 cur = self.0[cur];
             }
-            Some(cycle)
+            Some(Cycle(cycle))
         })
     }
 
@@ -166,6 +166,51 @@ impl std::fmt::Display for Permutation {
             write!(f, "{x}")?;
         }
         write!(f, "]")
+    }
+}
+
+/// A single cycle of a permutation: its elements in cyclic order, starting at the
+/// cycle's smallest element. Each element maps to the next, and the last wraps
+/// back to the first. Always non-empty (a fixed point is a cycle of length 1).
+///
+/// Yielded by [`Permutation::cycles`]. Derefs to `[usize]`, so slice methods and
+/// indexing work directly; `IntoIterator` yields the elements by value.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Cycle(Vec<usize>);
+
+impl Cycle {
+    /// Consumes the cycle, returning its elements in cyclic order.
+    pub fn into_vec(self) -> Vec<usize> {
+        self.0
+    }
+}
+
+impl std::ops::Deref for Cycle {
+    type Target = [usize];
+    fn deref(&self) -> &[usize] {
+        &self.0
+    }
+}
+
+impl IntoIterator for Cycle {
+    type Item = usize;
+    type IntoIter = std::vec::IntoIter<usize>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+/// Formats the cycle in cycle notation, e.g. `(0 2 1)`.
+impl std::fmt::Display for Cycle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(")?;
+        for (i, x) in self.0.iter().enumerate() {
+            if i > 0 {
+                write!(f, " ")?;
+            }
+            write!(f, "{x}")?;
+        }
+        write!(f, ")")
     }
 }
 
@@ -379,7 +424,8 @@ mod tests {
 
     #[test]
     fn cycles_decomposition() {
-        let collect = |p: &Permutation| p.cycles().collect::<Vec<_>>();
+        // Cycles compared by their element vectors.
+        let collect = |p: &Permutation| p.cycles().map(Cycle::into_vec).collect::<Vec<_>>();
 
         // one long cycle
         assert_eq!(collect(&Permutation::try_new(vec![1, 2, 0]).unwrap()), vec![vec![0, 1, 2]]);
@@ -397,7 +443,12 @@ mod tests {
         assert_eq!(collect(&Permutation::identity(3)), vec![vec![0], vec![1], vec![2]]);
         assert_eq!(Permutation::identity(0).cycles().count(), 0);
 
-        // Cycles partition {0, ..., n-1} for a random permutation.
+        // Cycle Display uses cycle notation; Deref gives slice access.
+        let c = Permutation::try_new(vec![1, 2, 0]).unwrap().cycles().next().unwrap();
+        assert_eq!(c.to_string(), "(0 1 2)");
+        assert_eq!(c.len(), 3);
+
+        // Cycles partition {0, ..., n-1} for a random permutation (IntoIterator).
         let p = sample_permutation_with(50, &mut rand::rng());
         let mut all: Vec<usize> = p.cycles().flatten().collect();
         all.sort_unstable();

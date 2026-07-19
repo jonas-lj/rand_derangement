@@ -49,8 +49,8 @@ impl Permutation {
     /// Panics if `self.len() != other.len()`.
     pub fn compose(&self, other: &Permutation) -> Permutation {
         assert_eq!(
-            self.len(),
-            other.len(),
+            self.symbols(),
+            other.symbols(),
             "permutations must have the same length"
         );
         Permutation(other.0.iter().map(|&i| self.0[i]).collect())
@@ -82,6 +82,17 @@ impl Permutation {
         })
     }
 
+    /// The parity (sign) of the permutation. A cycle of length `k` decomposes
+    /// into `k - 1` transpositions, so the parity is `(symbols - #cycles) mod 2`.
+    pub fn parity(&self) -> Parity {
+        let transpositions = self.symbols() - self.cycles().count();
+        if transpositions.is_multiple_of(2) {
+            Parity::Even
+        } else {
+            Parity::Odd
+        }
+    }
+
     /// Applies the permutation to `data`.
     ///
     /// # Panics
@@ -89,7 +100,7 @@ impl Permutation {
     pub fn apply<T: Clone>(&self, data: &[T]) -> Vec<T> {
         assert_eq!(
             data.len(),
-            self.len(),
+            self.symbols(),
             "data length must match permutation length"
         );
         self.0.iter().map(|&i| data[i].clone()).collect()
@@ -102,7 +113,7 @@ impl Permutation {
     pub fn apply_mut<T>(&self, data: &mut [T]) {
         assert_eq!(
             data.len(),
-            self.len(),
+            self.symbols(),
             "data length must match permutation length"
         );
         for cycle in self.cycles() {
@@ -120,7 +131,7 @@ impl Permutation {
         self.0
     }
 
-    pub fn len(&self) -> usize {
+    pub fn symbols(&self) -> usize {
         self.0.len()
     }
 
@@ -169,18 +180,23 @@ impl std::fmt::Display for Permutation {
 /// A single cycle of a permutation on `n` symbols.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Cycle {
-    /// Number of symbols the cycle operates on (the ambient permutation's length).
     n: usize,
-    /// The cycle's elements in cyclic order, starting at the smallest.
     elements: Vec<usize>,
 }
 
 impl Cycle {
     /// The number of symbols the cycle operates on, i.e. the length of the
-    /// permutation it came from. This differs from the cycle's own length
-    /// (`self.len()`, via `Deref`), which counts the elements it moves.
-    pub fn n(&self) -> usize {
+    /// permutation it came from. This differs from the cycle's own length,
+    /// which counts the elements it moves.
+    pub fn symbols(&self) -> usize {
         self.n
+    }
+
+    /// The number of elements the cycle moves. A cycle is never empty (a fixed
+    /// point is a cycle of length 1), so there is no `is_empty`.
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.elements.len()
     }
 
     /// Consumes the cycle, returning its elements in cyclic order.
@@ -192,11 +208,11 @@ impl Cycle {
     /// positions by one so each ends up with the value of its successor.
     ///
     /// # Panics
-    /// Panics if `data.len() != self.n()`.
+    /// Panics if `data.len() != self.symbols()`.
     pub fn apply_mut<T>(&self, data: &mut [T]) {
         assert_eq!(
             data.len(),
-            self.n,
+            self.symbols(),
             "data length must match the cycle's symbol count"
         );
         for pair in self.elements.windows(2) {
@@ -231,6 +247,24 @@ impl std::fmt::Display for Cycle {
             write!(f, "{x}")?;
         }
         write!(f, ")")
+    }
+}
+
+/// The parity (sign) of a permutation, i.e. whether it decomposes into an even or
+/// odd number of transpositions. Returned by [`Permutation::parity`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Parity {
+    Even,
+    Odd,
+}
+
+impl Parity {
+    /// The sign of the permutation: `+1` if even, `-1` if odd.
+    pub fn sign(self) -> i32 {
+        match self {
+            Parity::Even => 1,
+            Parity::Odd => -1,
+        }
     }
 }
 
@@ -371,7 +405,7 @@ mod tests {
         for n in [0, 1, 2, 3, 5, 8, 50, 100] {
             for _ in 0..500 {
                 let p = sample_permutation_with(n, &mut rng);
-                assert_eq!(p.len(), n);
+                assert_eq!(p.symbols(), n);
                 assert!(is_permutation(&p), "not a permutation for n = {n}: {p:?}");
             }
         }
@@ -418,12 +452,12 @@ mod tests {
 
         // Deref: indexing and slice methods.
         assert_eq!(p[0], 1);
-        assert_eq!(p.len(), 3);
+        assert_eq!(p.symbols(), 3);
         assert!(p.is_derangement());
 
         // inverse ∘ p == identity.
         let inv = p.inverse();
-        for i in 0..p.len() {
+        for i in 0..p.symbols() {
             assert_eq!(inv[p[i]], i);
             assert_eq!(p[inv[i]], i);
         }
@@ -472,7 +506,7 @@ mod tests {
         // and can be applied on its own.
         let p = Permutation::try_new(vec![1, 2, 0, 3]).unwrap(); // (0 1 2), fixed 3
         let cyc = p.cycles().next().unwrap();
-        assert_eq!(cyc.n(), 4);
+        assert_eq!(cyc.symbols(), 4);
         assert_eq!(cyc.len(), 3);
         let mut data = ['a', 'b', 'c', 'd'];
         cyc.apply_mut(&mut data);
@@ -506,12 +540,12 @@ mod tests {
 
         // (p ∘ q)[i] == p[q[i]]
         let pq = p.compose(&q);
-        for i in 0..p.len() {
+        for i in 0..p.symbols() {
             assert_eq!(pq[i], p[q[i]]);
         }
 
         // p ∘ p⁻¹ == p⁻¹ ∘ p == identity.
-        let id = Permutation::identity(p.len());
+        let id = Permutation::identity(p.symbols());
         assert_eq!(p.compose(&p.inverse()), id);
         assert_eq!(p.inverse().compose(&p), id);
 
@@ -524,6 +558,35 @@ mod tests {
     #[should_panic(expected = "permutations must have the same length")]
     fn compose_length_mismatch_panics() {
         Permutation::identity(3).compose(&Permutation::identity(2));
+    }
+
+    #[test]
+    fn parity_of_known_permutations() {
+        let parity = |v: Vec<usize>| Permutation::try_new(v).unwrap().parity();
+
+        assert_eq!(Permutation::identity(5).parity(), Parity::Even); // identity is even
+        assert_eq!(parity(vec![1, 0, 2]), Parity::Odd); // one transposition
+        assert_eq!(parity(vec![1, 2, 0]), Parity::Even); // a 3-cycle = 2 transpositions
+        assert_eq!(parity(vec![1, 0, 3, 2]), Parity::Even); // two transpositions
+        assert_eq!(parity(vec![]), Parity::Even); // empty is even
+
+        assert_eq!(Parity::Even.sign(), 1);
+        assert_eq!(Parity::Odd.sign(), -1);
+    }
+
+    #[test]
+    fn parity_is_multiplicative() {
+        // sign(p ∘ q) == sign(p) * sign(q), and inverse has the same parity.
+        let mut rng = rand::rng();
+        for _ in 0..200 {
+            let p = sample_permutation_with(9, &mut rng);
+            let q = sample_permutation_with(9, &mut rng);
+            assert_eq!(
+                p.compose(&q).parity().sign(),
+                p.parity().sign() * q.parity().sign()
+            );
+            assert_eq!(p.inverse().parity(), p.parity());
+        }
     }
 
     #[test]

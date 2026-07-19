@@ -1,11 +1,14 @@
-//! Sampling of uniformly random derangements (permutations with no fixed points),
-//! via a variant of the Martínez–Panholzer–Prodinger algorithm.
+//! A small library for random permutations and derangements of
+//! `{0, 1, ..., n-1}` (a *derangement* is a permutation with no fixed points).
 //!
-//! # Reference
-//! Conrado Martínez, Alois Panholzer, and Helmut Prodinger, "Generating Random
-//! Derangements", *Proc. 5th Workshop on Analytic Algorithmics and Combinatorics
-//! (ANALCO)*, SIAM, 2008.
-//! <https://epubs.siam.org/doi/pdf/10.1137/1.9781611972986.7>
+//! - [`sample_permutation`] / [`sample_derangement`] draw a uniformly random
+//!   permutation / derangement.
+//! - [`shuffle`] / [`derange`] do the same in place on an arbitrary slice.
+//! - [`Permutation`] is a validated wrapper offering [`apply`](Permutation::apply),
+//!   [`inverse`](Permutation::inverse), cycle-notation `Display`, and more.
+//!
+//! Permutations use a Fisher–Yates shuffle; derangements use a variant of the
+//! Martínez–Panholzer–Prodinger algorithm (see [`derange`] for the reference).
 
 use std::iter::successors;
 use std::ops::Index;
@@ -28,11 +31,7 @@ impl Permutation {
 
     /// Wraps `map` after checking it is a permutation of `{0, ..., map.len()-1}`.
     pub fn try_new(map: Vec<usize>) -> Result<Self, NotAPermutation> {
-        if is_permutation(&map) {
-            Ok(Self(map))
-        } else {
-            Err(NotAPermutation)
-        }
+        is_permutation(&map).then(|| Self(map)).ok_or(NotAPermutation)
     }
 
     /// The inverse permutation, satisfying `self.inverse()[self[i]] == i`.
@@ -185,6 +184,12 @@ fn two_cycle_probabilities() -> impl Iterator<Item = f64> {
 ///
 /// # Panics
 /// Panics if `data.len() == 1`, since no derangement of a single element exists.
+///
+/// # Reference
+/// Conrado Martínez, Alois Panholzer, and Helmut Prodinger, "Generating Random
+/// Derangements", *Proc. 5th Workshop on Analytic Algorithmics and Combinatorics
+/// (ANALCO)*, SIAM, 2008.
+/// <https://epubs.siam.org/doi/pdf/10.1137/1.9781611972986.7>
 pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
     let n = data.len();
     if n == 0 {

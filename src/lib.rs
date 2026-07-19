@@ -158,7 +158,7 @@ impl Permutation {
         let mut overflowed = false;
         walk_cycles!(self, cycle => {
             if !overflowed {
-                match (order / gcd(order, cycle.len())).checked_mul(cycle.len()) {
+                match lcm(order, cycle.len()) {
                     Some(next) => order = next,
                     None => overflowed = true,
                 }
@@ -404,6 +404,12 @@ fn gcd(mut a: usize, mut b: usize) -> usize {
         (a, b) = (b, a % b);
     }
     a
+}
+
+/// Least common multiple, or `None` if it overflows `usize`. Divides before
+/// multiplying to keep the intermediate value as small as possible.
+fn lcm(a: usize, b: usize) -> Option<usize> {
+    (a / gcd(a, b)).checked_mul(b)
 }
 
 #[cfg(test)]

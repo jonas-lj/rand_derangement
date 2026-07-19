@@ -45,7 +45,7 @@ impl Permutation {
 
     /// Iterates over the cycles of the permutation, each yielded as a `Vec<usize>`
     /// beginning at its smallest element. Fixed points appear as singleton cycles,
-    /// so the cycles partition `{0, ..., n-1}` (matching the `Display` output).
+    /// so the cycles partition `{0, ..., n-1}`.
     pub fn cycles(&self) -> impl Iterator<Item = Vec<usize>> + '_ {
         let mut seen = vec![false; self.0.len()];
         let mut start = 0;
@@ -154,29 +154,18 @@ impl TryFrom<Vec<usize>> for Permutation {
     }
 }
 
-/// Formats the permutation in cycle notation, e.g. `(0 2 1)(3 4)`. Fixed points
-/// appear as singleton cycles, so the identity of size 3 is `(0)(1)(2)`.
+/// Formats the permutation in one-line notation: the images `self[0], self[1],
+/// ...` in order, e.g. `[1 2 0]`.
 impl std::fmt::Display for Permutation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut seen = vec![false; self.0.len()];
-        for start in 0..self.0.len() {
-            if seen[start] {
-                continue;
-            }
-            write!(f, "(")?;
-            let mut cur = start;
-            loop {
-                seen[cur] = true;
-                write!(f, "{cur}")?;
-                cur = self.0[cur];
-                if cur == start {
-                    break;
-                }
+        write!(f, "[")?;
+        for (i, x) in self.0.iter().enumerate() {
+            if i > 0 {
                 write!(f, " ")?;
             }
-            write!(f, ")")?;
+            write!(f, "{x}")?;
         }
-        Ok(())
+        write!(f, "]")
     }
 }
 
@@ -378,10 +367,11 @@ mod tests {
         let data = ['a', 'b', 'c'];
         assert_eq!(p.apply(&data), vec!['b', 'c', 'a']);
 
-        // Display in cycle notation.
-        assert_eq!(p.to_string(), "(0 1 2)");
-        let two_cycles = Permutation::try_new(vec![1, 0, 3, 2]).unwrap();
-        assert_eq!(two_cycles.to_string(), "(0 1)(2 3)");
+        // Display in one-line notation (the images in order).
+        assert_eq!(p.to_string(), "[1 2 0]");
+        let q = Permutation::try_new(vec![1, 0, 3, 2]).unwrap();
+        assert_eq!(q.to_string(), "[1 0 3 2]");
+        assert_eq!(Permutation::identity(3).to_string(), "[0 1 2]");
 
         // into_inner round-trips.
         assert_eq!(p.into_vec(), vec![1, 2, 0]);

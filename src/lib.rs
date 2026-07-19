@@ -11,93 +11,6 @@ use std::iter::successors;
 use std::ops::Index;
 use rand::RngExt;
 
-/// Infinite iterator over the 2-cycle probabilities `two_cycle(u)` for
-/// `u = 0, 1, 2, ...` where `two_cycle(u) = d[u-1] / (d[u-1] + d[u])` is the probability that, with
-/// `u + 1` elements left to place, the current one closes a 2-cycle rather than
-/// extending into a longer cycle.
-fn two_cycle_probabilities() -> impl Iterator<Item = f64> {
-    successors(Some((0usize, 0.0f64)), |&(mut u, prev)| {
-        u += 1;
-        Some((u, (1.0 - prev) / (u as f64 - prev)))
-    })
-    .map(|(_, p)| p)
-}
-
-/// Rearranges `data` in place into a uniformly random derangement of its
-/// elements so every element ends up at a position different from where it started.
-///
-/// # Panics
-/// Panics if `data.len() == 1`, since no derangement of a single element exists.
-pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
-    let n = data.len();
-    if n == 0 {
-        return;
-    }
-    assert!(n != 1, "no derangement exists for n = 1");
-
-    let two_cycle_prob = two_cycle_probabilities().take(n).collect::<Vec<f64>>();
-    let mut unmarked = (0..n).collect::<Vec<usize>>();
-
-    while unmarked.len() > 1 {
-        let i = unmarked.pop().unwrap();
-        let j = rng.random_range(..unmarked.len());
-        data.swap(i, unmarked[j]);
-        if rng.random_bool(two_cycle_prob[unmarked.len()]) {
-            unmarked.swap_remove(j);
-        }
-    }
-}
-
-/// Samples a uniformly random derangement of `{0, 1, ..., n-1}` using the given
-/// random number generator.
-///
-/// # Panics
-/// Panics if `n == 1`, since no derangement of a single element exists.
-pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
-    let mut permutation = (0..n).collect::<Vec<usize>>();
-    derange(&mut permutation, rng);
-    Permutation(permutation)
-}
-
-/// Samples a uniformly random derangement of `{0, 1, ..., n-1}`.
-///
-/// # Panics
-/// Panics if `n == 1`, since no derangement of a single element exists.
-pub fn sample_derangement(n: usize) -> Permutation {
-    sample_derangement_with(n, &mut rand::rng())
-}
-
-/// Samples a uniformly random permutation of `{0, 1, ..., n-1}` using the given
-/// random number generator, via a Fisher–Yates shuffle.
-pub fn sample_permutation_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
-    let mut permutation = (0..n).collect::<Vec<usize>>();
-    for i in (1..n).rev() {
-        let j = rng.random_range(0..=i);
-        permutation.swap(i, j);
-    }
-    Permutation(permutation)
-}
-
-/// Samples a uniformly random permutation of `{0, 1, ..., n-1}`.
-pub fn sample_permutation(n: usize) -> Permutation {
-    sample_permutation_with(n, &mut rand::rng())
-}
-
-/// Returns `true` iff `p` is a permutation of `{0, 1, ..., p.len()-1}`, i.e. every
-/// index in that range appears exactly once.
-fn is_permutation(p: &[usize]) -> bool {
-    let mut seen = vec![false; p.len()];
-    // `x < len` first so the index is in bounds; `replace` returns the previous
-    // bit, so a repeat (already `true`) fails the check.
-    p.iter().all(|&x| x < p.len() && !std::mem::replace(&mut seen[x], true))
-}
-
-/// Returns `true` iff `p` is a derangement: a permutation of
-/// `{0, 1, ..., p.len()-1}` with no fixed point (`p[i] != i` for all `i`).
-fn is_derangement(p: &[usize]) -> bool {
-    is_permutation(p) && p.iter().enumerate().all(|(i, &pi)| i != pi)
-}
-
 /// A permutation of `{0, 1, ..., n-1}`, represented by its map: element `i` maps
 /// to `self[i]`. Valid by construction — built by [`sample_derangement`] and
 /// friends, or checked via [`Permutation::try_new`] / `TryFrom<Vec<usize>>`.
@@ -248,6 +161,93 @@ impl std::fmt::Display for NotAPermutation {
 }
 
 impl std::error::Error for NotAPermutation {}
+
+/// Infinite iterator over the 2-cycle probabilities `two_cycle(u)` for
+/// `u = 0, 1, 2, ...` where `two_cycle(u) = d[u-1] / (d[u-1] + d[u])` is the probability that, with
+/// `u + 1` elements left to place, the current one closes a 2-cycle rather than
+/// extending into a longer cycle.
+fn two_cycle_probabilities() -> impl Iterator<Item = f64> {
+    successors(Some((0usize, 0.0f64)), |&(mut u, prev)| {
+        u += 1;
+        Some((u, (1.0 - prev) / (u as f64 - prev)))
+    })
+    .map(|(_, p)| p)
+}
+
+/// Rearranges `data` in place into a uniformly random derangement of its
+/// elements so every element ends up at a position different from where it started.
+///
+/// # Panics
+/// Panics if `data.len() == 1`, since no derangement of a single element exists.
+pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
+    let n = data.len();
+    if n == 0 {
+        return;
+    }
+    assert!(n != 1, "no derangement exists for n = 1");
+
+    let two_cycle_prob = two_cycle_probabilities().take(n).collect::<Vec<f64>>();
+    let mut unmarked = (0..n).collect::<Vec<usize>>();
+
+    while unmarked.len() > 1 {
+        let i = unmarked.pop().unwrap();
+        let j = rng.random_range(..unmarked.len());
+        data.swap(i, unmarked[j]);
+        if rng.random_bool(two_cycle_prob[unmarked.len()]) {
+            unmarked.swap_remove(j);
+        }
+    }
+}
+
+/// Samples a uniformly random derangement of `{0, 1, ..., n-1}` using the given
+/// random number generator.
+///
+/// # Panics
+/// Panics if `n == 1`, since no derangement of a single element exists.
+pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
+    let mut permutation = (0..n).collect::<Vec<usize>>();
+    derange(&mut permutation, rng);
+    Permutation(permutation)
+}
+
+/// Samples a uniformly random derangement of `{0, 1, ..., n-1}`.
+///
+/// # Panics
+/// Panics if `n == 1`, since no derangement of a single element exists.
+pub fn sample_derangement(n: usize) -> Permutation {
+    sample_derangement_with(n, &mut rand::rng())
+}
+
+/// Samples a uniformly random permutation of `{0, 1, ..., n-1}` using the given
+/// random number generator, via a Fisher–Yates shuffle.
+pub fn sample_permutation_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
+    let mut permutation = (0..n).collect::<Vec<usize>>();
+    for i in (1..n).rev() {
+        let j = rng.random_range(0..=i);
+        permutation.swap(i, j);
+    }
+    Permutation(permutation)
+}
+
+/// Samples a uniformly random permutation of `{0, 1, ..., n-1}`.
+pub fn sample_permutation(n: usize) -> Permutation {
+    sample_permutation_with(n, &mut rand::rng())
+}
+
+/// Returns `true` iff `p` is a permutation of `{0, 1, ..., p.len()-1}`, i.e. every
+/// index in that range appears exactly once.
+fn is_permutation(p: &[usize]) -> bool {
+    let mut seen = vec![false; p.len()];
+    // `x < len` first so the index is in bounds; `replace` returns the previous
+    // bit, so a repeat (already `true`) fails the check.
+    p.iter().all(|&x| x < p.len() && !std::mem::replace(&mut seen[x], true))
+}
+
+/// Returns `true` iff `p` is a derangement: a permutation of
+/// `{0, 1, ..., p.len()-1}` with no fixed point (`p[i] != i` for all `i`).
+fn is_derangement(p: &[usize]) -> bool {
+    is_permutation(p) && p.iter().enumerate().all(|(i, &pi)| i != pi)
+}
 
 #[cfg(test)]
 mod tests {

@@ -60,24 +60,25 @@ impl Permutation {
     /// element. Fixed points appear as singleton cycles, so the cycles partition
     /// `{0, ..., n-1}`.
     pub fn cycles(&self) -> impl Iterator<Item = Cycle> + '_ {
-        let mut seen = vec![false; self.0.len()];
+        let n = self.0.len();
+        let mut seen = vec![false; n];
         let mut start = 0;
         std::iter::from_fn(move || {
             // Advance to the next element not yet part of a cycle.
-            while start < self.0.len() && seen[start] {
+            while start < n && seen[start] {
                 start += 1;
             }
-            if start == self.0.len() {
+            if start == n {
                 return None;
             }
-            let mut cycle = Vec::new();
+            let mut elements = Vec::new();
             let mut cur = start;
             while !seen[cur] {
                 seen[cur] = true;
-                cycle.push(cur);
+                elements.push(cur);
                 cur = self.0[cur];
             }
-            Some(Cycle(cycle))
+            Some(Cycle { n, elements })
         })
     }
 
@@ -104,12 +105,8 @@ impl Permutation {
             self.len(),
             "data length must match permutation length"
         );
-        // Rotate each cycle by one so every position ends up with the value of its
-        // successor: swapping down consecutive pairs realizes that rotation.
         for cycle in self.cycles() {
-            for pair in cycle.windows(2) {
-                data.swap(pair[0], pair[1]);
-            }
+            cycle.apply_mut(data);
         }
     }
 
@@ -169,26 +166,49 @@ impl std::fmt::Display for Permutation {
     }
 }
 
-/// A single cycle of a permutation: its elements in cyclic order, starting at the
-/// cycle's smallest element. Each element maps to the next, and the last wraps
-/// back to the first. Always non-empty (a fixed point is a cycle of length 1).
-///
-/// Yielded by [`Permutation::cycles`]. Derefs to `[usize]`, so slice methods and
-/// indexing work directly; `IntoIterator` yields the elements by value.
+/// A single cycle of a permutation on `n` symbols.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Cycle(Vec<usize>);
+pub struct Cycle {
+    /// Number of symbols the cycle operates on (the ambient permutation's length).
+    n: usize,
+    /// The cycle's elements in cyclic order, starting at the smallest.
+    elements: Vec<usize>,
+}
 
 impl Cycle {
+    /// The number of symbols the cycle operates on, i.e. the length of the
+    /// permutation it came from. This differs from the cycle's own length
+    /// (`self.len()`, via `Deref`), which counts the elements it moves.
+    pub fn n(&self) -> usize {
+        self.n
+    }
+
     /// Consumes the cycle, returning its elements in cyclic order.
     pub fn into_vec(self) -> Vec<usize> {
-        self.0
+        self.elements
+    }
+
+    /// Applies the cycle to `data` in place, rotating the entries at its element
+    /// positions by one so each ends up with the value of its successor.
+    ///
+    /// # Panics
+    /// Panics if `data.len() != self.n()`.
+    pub fn apply_mut<T>(&self, data: &mut [T]) {
+        assert_eq!(
+            data.len(),
+            self.n,
+            "data length must match the cycle's symbol count"
+        );
+        for pair in self.elements.windows(2) {
+            data.swap(pair[0], pair[1]);
+        }
     }
 }
 
 impl std::ops::Deref for Cycle {
     type Target = [usize];
     fn deref(&self) -> &[usize] {
-        &self.0
+        &self.elements
     }
 }
 
@@ -196,7 +216,7 @@ impl IntoIterator for Cycle {
     type Item = usize;
     type IntoIter = std::vec::IntoIter<usize>;
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        self.elements.into_iter()
     }
 }
 
@@ -204,7 +224,7 @@ impl IntoIterator for Cycle {
 impl std::fmt::Display for Cycle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "(")?;
-        for (i, x) in self.0.iter().enumerate() {
+        for (i, x) in self.elements.iter().enumerate() {
             if i > 0 {
                 write!(f, " ")?;
             }
@@ -448,6 +468,16 @@ mod tests {
         assert_eq!(c.to_string(), "(0 1 2)");
         assert_eq!(c.len(), 3);
 
+        // A cycle carries the ambient symbol count `n` (distinct from its own len)
+        // and can be applied on its own.
+        let p = Permutation::try_new(vec![1, 2, 0, 3]).unwrap(); // (0 1 2), fixed 3
+        let cyc = p.cycles().next().unwrap();
+        assert_eq!(cyc.n(), 4);
+        assert_eq!(cyc.len(), 3);
+        let mut data = ['a', 'b', 'c', 'd'];
+        cyc.apply_mut(&mut data);
+        assert_eq!(data, ['b', 'c', 'a', 'd']); // positions 0,1,2 rotated; 3 untouched
+
         // Cycles partition {0, ..., n-1} for a random permutation (IntoIterator).
         let p = sample_permutation_with(50, &mut rand::rng());
         let mut all: Vec<usize> = p.cycles().flatten().collect();
@@ -460,6 +490,13 @@ mod tests {
     fn apply_length_mismatch_panics() {
         let p = Permutation::try_new(vec![1, 2, 0]).unwrap();
         p.apply(&[1, 2]);
+    }
+
+    #[test]
+    #[should_panic(expected = "data length must match the cycle's symbol count")]
+    fn cycle_apply_mut_length_mismatch_panics() {
+        let c = Permutation::try_new(vec![1, 0]).unwrap().cycles().next().unwrap();
+        c.apply_mut(&mut [1, 2, 3]); // len 3 != n 2
     }
 
     #[test]

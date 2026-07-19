@@ -43,6 +43,21 @@ impl Permutation {
         Permutation(inverse)
     }
 
+    /// The composition `self ∘ other`: the permutation mapping `i` to
+    /// `self[other[i]]` (apply `other` first, then `self`). Composing with
+    /// [`inverse`](Permutation::inverse) yields the identity.
+    ///
+    /// # Panics
+    /// Panics if `self.len() != other.len()`.
+    pub fn compose(&self, other: &Permutation) -> Permutation {
+        assert_eq!(
+            self.len(),
+            other.len(),
+            "permutations must have the same length"
+        );
+        Permutation(other.0.iter().map(|&i| self.0[i]).collect())
+    }
+
     /// Iterates over the cycles of the permutation, each beginning at its smallest
     /// element. Fixed points appear as singleton cycles, so the cycles partition
     /// `{0, ..., n-1}`.
@@ -460,6 +475,33 @@ mod tests {
     fn apply_length_mismatch_panics() {
         let p = Permutation::try_new(vec![1, 2, 0]).unwrap();
         p.apply(&[1, 2]);
+    }
+
+    #[test]
+    fn compose_and_inverse() {
+        let p = Permutation::try_new(vec![1, 2, 0, 3]).unwrap();
+        let q = Permutation::try_new(vec![3, 0, 1, 2]).unwrap();
+
+        // (p ∘ q)[i] == p[q[i]]
+        let pq = p.compose(&q);
+        for i in 0..p.len() {
+            assert_eq!(pq[i], p[q[i]]);
+        }
+
+        // p ∘ p⁻¹ == p⁻¹ ∘ p == identity.
+        let id = Permutation::identity(p.len());
+        assert_eq!(p.compose(&p.inverse()), id);
+        assert_eq!(p.inverse().compose(&p), id);
+
+        // Composing with the identity is a no-op on either side.
+        assert_eq!(p.compose(&id), p);
+        assert_eq!(id.compose(&p), p);
+    }
+
+    #[test]
+    #[should_panic(expected = "permutations must have the same length")]
+    fn compose_length_mismatch_panics() {
+        Permutation::identity(3).compose(&Permutation::identity(2));
     }
 
     #[test]

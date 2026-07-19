@@ -1,47 +1,67 @@
 # rand_derangement
 
-Fast, uniformly random sampling of derangements (permutations with no fixed points).
+Fast, **uniformly** random derangements and permutations of `{0, 1, …, n-1}`,
+plus a small `Permutation` type with the usual operations.
 
-This is a variant of the Martínez–Panholzer–Prodinger algorithm. With `u + 1`
-elements still in play, the element being placed either forms a **2-cycle** (a
-transposition with its partner) or splices into a longer cycle. It forms a
-2-cycle with probability
-
-```
-two_cycle(u) = d[u-1] / (d[u-1] + d[u])
-```
-
-where `d[k] = !k` is the number of derangements of `k` elements (the
-subfactorial). This follows from the recurrence `d[u+1] = u * (d[u] + d[u-1])`,
-whose two terms count exactly the 2-cycle and longer-cycle cases — it is the
-original `u * d[u-1] / d[u+1]` in simplified form. (This is the general
-counting-to-sampling / self-reducibility pattern: each branch is taken with
-probability proportional to the number of derangements that complete it.)
-
-The probabilities are precomputed once, in `f64`, with the stable recursion
-
-```
-two_cycle(1) = 1,   two_cycle(u) = (1 - two_cycle(u-1)) / (u - two_cycle(u-1))
-```
-
-and fed to a plain Bernoulli trial (`random_bool`). This never forms the
-subfactorials themselves, so there are no big integers and no overflow for any
-`n`. The recursion is only stable in this direction (increasing `u`); it is the
-minimal solution of the underlying linear recurrence, so it must be built up
-front rather than generated downward inside the loop.
+A *derangement* is a permutation with no fixed points. Unlike some existing
+crates, the sampler here is provably uniform and runs in `O(n)` time with no
+big-integer arithmetic and no overflow ceiling on `n`.
 
 ## Usage
 
-```rust
-use rand_derangement::sample_derangement;
+Sample a random derangement or permutation:
 
-let d = sample_derangement(10);
-assert!(d.iter().enumerate().all(|(i, &pi)| i != pi));
+```rust
+use rand_derangement::Permutation;
+
+let d = Permutation::sample_derangement(10);
+assert!(d.is_derangement());
+
+let p = Permutation::sample_permutation(10);
 ```
+
+`Permutation` derefs to `[usize]` (its one-line map), so slice methods and
+indexing work directly, and it offers the usual group operations:
+
+```rust
+use rand_derangement::Permutation;
+
+let p = Permutation::try_new(vec![1, 2, 0, 3]).unwrap();
+
+assert_eq!(p[0], 1);                       // Deref + indexing
+assert_eq!(p.inverse().compose(&p), Permutation::identity(4));
+assert_eq!(p.order(), Ok(3));              // lcm of cycle lengths
+let _ = p.parity();                        // Parity::Even | Parity::Odd
+let _ = p.cycles();                        // Vec<Cycle>, e.g. (0 1 2)(3)
+assert_eq!(format!("{p}"), "[1 2 0 3]");   // one-line notation
+
+let permuted = p.apply(&['a', 'b', 'c', 'd']); // out[i] = data[p[i]]
+```
+
+Derange or shuffle an arbitrary slice in place (no `Permutation` produced, no
+`Clone` bound):
+
+```rust
+use rand_derangement::{derange, shuffle};
+
+let mut rng = rand::rng();
+let mut data = ['a', 'b', 'c', 'd', 'e'];
+
+shuffle(&mut data, &mut rng);   // uniform random permutation, in place
+derange(&mut data, &mut rng);   // no element stays where it was
+```
+
+All samplers have an `_with(…, rng)` variant that takes an explicit RNG.
 
 ## Development
 
 ```
-cargo test    # correctness + uniformity checks
-cargo run     # small demo
+cargo test                              # correctness + uniformity checks
+cargo bench                             # criterion sampling benchmark
+cargo run --release --example golomb_dickman   # estimates the Golomb–Dickman constant
 ```
+
+## License
+
+Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at
+your option.

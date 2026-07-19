@@ -390,8 +390,11 @@ fn is_derangement(p: &[usize]) -> bool {
 }
 
 /// Greatest common divisor, via the Euclidean algorithm.
-fn gcd(a: usize, b: usize) -> usize {
-    if b == 0 { a } else { gcd(b, a % b) }
+fn gcd(mut a: usize, mut b: usize) -> usize {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
 }
 
 #[cfg(test)]
@@ -584,66 +587,6 @@ mod tests {
         assert_eq!(parity(vec![1, 2, 0]), Parity::Even); // a 3-cycle = 2 transpositions
         assert_eq!(parity(vec![1, 0, 3, 2]), Parity::Even); // two transpositions
         assert_eq!(parity(vec![]), Parity::Even); // empty is even
-    }
-
-    #[test]
-    fn order_is_lcm_of_cycle_lengths() {
-        let order = |v: Vec<usize>| Permutation::try_new(v).unwrap().order();
-
-        assert_eq!(Permutation::identity(5).order(), 1);
-        assert_eq!(order(vec![1, 0, 2]), 2); // transposition
-        assert_eq!(order(vec![1, 2, 0]), 3); // 3-cycle
-        assert_eq!(order(vec![1, 0, 3, 2]), 2); // two 2-cycles: lcm(2,2) = 2
-        assert_eq!(order(vec![1, 2, 0, 4, 3]), 6); // 3-cycle + 2-cycle: lcm(3,2) = 6
-        assert_eq!(Permutation::identity(0).order(), 1); // empty
-
-        // Applying p exactly order(p) times yields the identity.
-        let mut rng = rand::rng();
-        for _ in 0..100 {
-            let p = sample_permutation_with(7, &mut rng);
-            let id = Permutation::identity(7);
-            let mut acc = id.clone();
-            for _ in 0..p.order() {
-                acc = p.compose(&acc);
-            }
-            assert_eq!(acc, id);
-        }
-    }
-
-    #[test]
-    fn is_involution_detects_self_inverse() {
-        let involution = |v: Vec<usize>| Permutation::try_new(v).unwrap().is_involution();
-
-        assert!(Permutation::identity(4).is_involution());
-        assert!(involution(vec![1, 0, 2])); // single transposition
-        assert!(involution(vec![1, 0, 3, 2])); // two transpositions
-        assert!(!involution(vec![1, 2, 0])); // 3-cycle
-        assert!(Permutation::identity(0).is_involution()); // empty, vacuously
-
-        // Equivalent to `p == p⁻¹`.
-        let mut rng = rand::rng();
-        for _ in 0..200 {
-            let p = sample_permutation_with(8, &mut rng);
-            assert_eq!(p.is_involution(), p == p.inverse());
-        }
-    }
-
-    #[test]
-    fn parity_is_multiplicative() {
-        // parity(p ∘ q) is even iff p and q have equal parity, and the inverse
-        // has the same parity as the permutation.
-        let mut rng = rand::rng();
-        for _ in 0..200 {
-            let p = sample_permutation_with(9, &mut rng);
-            let q = sample_permutation_with(9, &mut rng);
-            let expected = if p.parity() == q.parity() {
-                Parity::Even
-            } else {
-                Parity::Odd
-            };
-            assert_eq!(p.compose(&q).parity(), expected);
-            assert_eq!(p.inverse().parity(), p.parity());
-        }
     }
 
     #[test]

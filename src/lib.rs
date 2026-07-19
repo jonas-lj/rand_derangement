@@ -14,10 +14,12 @@ use std::iter::successors;
 use rand::RngExt;
 
 /// Walks the cycle decomposition of `$perm`, reusing one `seen` bitmap and one
-/// cycle buffer (nothing is allocated per cycle). For each cycle it binds
-/// `$cycle` to the cycle's elements (in cyclic order, starting at the smallest)
-/// and runs `$body`. Shared skeleton for `for_each_cycle` and its mutable sibling,
-/// which differ only in how they pass the cycle to their callback.
+/// cycle buffer (nothing is allocated per cycle). For each cycle it binds `$cycle`
+/// to the cycle's elements (in cyclic order, starting at the smallest) and runs
+/// `$body`. The body may read `$cycle` freely, and — since a cycle's positions are
+/// disjoint from every later cycle — may also rewrite `$perm.0` at those positions
+/// in place without disturbing the remaining discovery. It must not `return`, as
+/// the body is inlined into the walk loop, not a closure.
 macro_rules! walk_cycles {
     ($perm:expr, $cycle:ident => $body:expr) => {{
         let n = $perm.0.len();
@@ -100,13 +102,15 @@ impl Permutation {
     /// Inverts the permutation in place, leaving `self` equal to what
     /// [`inverse`](Permutation::inverse) would return, without allocating a new map.
     pub fn inverse_mut(&mut self) {
-        // Reverse each cycle: every element is repointed to its predecessor.
-        self.for_each_cycle_mut(|map, cycle| {
+        // Reverse each cycle: every element is repointed to its predecessor. Sound
+        // in place because a cycle's positions are disjoint from every later cycle,
+        // so rewriting them cannot disturb the remaining discovery.
+        walk_cycles!(self, cycle => {
             let last = cycle[cycle.len() - 1];
             for pair in cycle.windows(2) {
-                map[pair[1]] = pair[0];
+                self.0[pair[1]] = pair[0];
             }
-            map[cycle[0]] = last;
+            self.0[cycle[0]] = last;
         });
     }
 
@@ -123,35 +127,19 @@ impl Permutation {
         Permutation(other.0.iter().map(|&i| self.0[i]).collect())
     }
 
-    /// Walks the cycle decomposition, calling `f` once per cycle with the cycle's
-    /// elements in cyclic order (starting at its smallest). A single buffer is
-    /// reused across cycles, so nothing is allocated per cycle.
-    fn for_each_cycle(&self, mut f: impl FnMut(&[usize])) {
-        walk_cycles!(self, cycle => f(&cycle));
-    }
-
-    /// Like [`for_each_cycle`](Permutation::for_each_cycle), but hands the callback
-    /// mutable access to the map alongside the cycle's element indices, so a cycle
-    /// can be rewritten in place. This is sound because a cycle's positions are
-    /// disjoint from every later cycle, so rewriting them cannot disturb the
-    /// remaining discovery (which reads only later, untouched positions).
-    fn for_each_cycle_mut(&mut self, mut f: impl FnMut(&mut [usize], &[usize])) {
-        walk_cycles!(self, cycle => f(&mut self.0, &cycle));
-    }
-
     /// The cycles of the permutation, each beginning at its smallest element.
     /// Fixed points appear as singleton cycles, so the cycles partition
     /// `{0, ..., n-1}`.
     pub fn cycles(&self) -> Vec<Cycle> {
         let mut cycles = Vec::new();
-        self.for_each_cycle(|elements| cycles.push(Cycle { elements: elements.to_vec() }));
+        walk_cycles!(self, cycle => cycles.push(Cycle { elements: cycle.clone() }));
         cycles
     }
 
     /// The parity (sign) of the permutation.
     pub fn parity(&self) -> Parity {
         let mut cycle_count = 0;
-        self.for_each_cycle(|_| cycle_count += 1);
+        walk_cycles!(self, cycle => cycle_count += 1);
         if (self.len() - cycle_count).is_multiple_of(2) {
             Parity::Even
         } else {
@@ -168,13 +156,12 @@ impl Permutation {
     pub fn order(&self) -> Result<usize, OrderOverflow> {
         let mut order = 1usize;
         let mut overflowed = false;
-        self.for_each_cycle(|cycle| {
-            if overflowed {
-                return;
-            }
-            match (order / gcd(order, cycle.len())).checked_mul(cycle.len()) {
-                Some(next) => order = next,
-                None => overflowed = true,
+        walk_cycles!(self, cycle => {
+            if !overflowed {
+                match (order / gcd(order, cycle.len())).checked_mul(cycle.len()) {
+                    Some(next) => order = next,
+                    None => overflowed = true,
+                }
             }
         });
         if overflowed {
@@ -208,7 +195,7 @@ impl Permutation {
             "data length must match permutation length"
         );
         // Rotate each cycle by one via swaps down consecutive elements.
-        self.for_each_cycle(|cycle| {
+        walk_cycles!(self, cycle => {
             for pair in cycle.windows(2) {
                 data.swap(pair[0], pair[1]);
             }

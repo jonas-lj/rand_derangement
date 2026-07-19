@@ -82,14 +82,57 @@ impl Permutation {
         })
     }
 
+    /// Iterates over the lengths of the cycles. Allocation-free: unlike
+    /// [`cycles`](Permutation::cycles) it never materializes the elements, so it
+    /// is the cheap way to compute cycle statistics.
+    fn cycle_lengths(&self) -> impl Iterator<Item = usize> + '_ {
+        let n = self.0.len();
+        let mut seen = vec![false; n];
+        let mut start = 0;
+        std::iter::from_fn(move || {
+            while start < n && seen[start] {
+                start += 1;
+            }
+            if start == n {
+                return None;
+            }
+            let mut len = 0;
+            let mut cur = start;
+            while !seen[cur] {
+                seen[cur] = true;
+                len += 1;
+                cur = self.0[cur];
+            }
+            Some(len)
+        })
+    }
+
     /// The parity (sign) of the permutation.
     pub fn parity(&self) -> Parity {
-        let transpositions = self.symbols() - self.cycles().count();
+        let transpositions = self.symbols() - self.cycle_lengths().count();
         if transpositions.is_multiple_of(2) {
             Parity::Even
         } else {
             Parity::Odd
         }
+    }
+
+    /// The order of the permutation: the least `k >= 1` such that applying it `k`
+    /// times gives the identity. It equals the least common multiple of the cycle
+    /// lengths; the identity and the empty permutation have order 1.
+    ///
+    /// # Panics
+    /// Panics if the order overflows `usize`. The order can be astronomically
+    /// large (up to Landau's function `g(n)`) for large permutations.
+    pub fn order(&self) -> usize {
+        fn gcd(a: usize, b: usize) -> usize {
+            if b == 0 { a } else { gcd(b, a % b) }
+        }
+        self.cycle_lengths().fold(1usize, |acc, len| {
+            (acc / gcd(acc, len))
+                .checked_mul(len)
+                .expect("permutation order overflows usize")
+        })
     }
 
     /// Applies the permutation to `data`.
@@ -115,8 +158,26 @@ impl Permutation {
             self.symbols(),
             "data length must match permutation length"
         );
-        for cycle in self.cycles() {
-            cycle.apply_mut(data);
+        // Walk each cycle directly and rotate it by one via swaps down consecutive
+        // elements. Done inline (rather than via `cycles()`) to avoid allocating a
+        // `Vec` per cycle.
+        let n = self.0.len();
+        let mut seen = vec![false; n];
+        for start in 0..n {
+            if seen[start] {
+                continue;
+            }
+            let mut cur = start;
+            seen[cur] = true;
+            loop {
+                let next = self.0[cur];
+                if next == start {
+                    break;
+                }
+                data.swap(cur, next);
+                seen[next] = true;
+                cur = next;
+            }
         }
     }
 
@@ -567,6 +628,30 @@ mod tests {
 
         assert_eq!(Parity::Even.sign(), 1);
         assert_eq!(Parity::Odd.sign(), -1);
+    }
+
+    #[test]
+    fn order_is_lcm_of_cycle_lengths() {
+        let order = |v: Vec<usize>| Permutation::try_new(v).unwrap().order();
+
+        assert_eq!(Permutation::identity(5).order(), 1);
+        assert_eq!(order(vec![1, 0, 2]), 2); // transposition
+        assert_eq!(order(vec![1, 2, 0]), 3); // 3-cycle
+        assert_eq!(order(vec![1, 0, 3, 2]), 2); // two 2-cycles: lcm(2,2) = 2
+        assert_eq!(order(vec![1, 2, 0, 4, 3]), 6); // 3-cycle + 2-cycle: lcm(3,2) = 6
+        assert_eq!(Permutation::identity(0).order(), 1); // empty
+
+        // Applying p exactly order(p) times yields the identity.
+        let mut rng = rand::rng();
+        for _ in 0..100 {
+            let p = sample_permutation_with(7, &mut rng);
+            let id = Permutation::identity(7);
+            let mut acc = id.clone();
+            for _ in 0..p.order() {
+                acc = p.compose(&acc);
+            }
+            assert_eq!(acc, id);
+        }
     }
 
     #[test]

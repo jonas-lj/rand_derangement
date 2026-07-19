@@ -270,22 +270,6 @@ impl Cycle {
     pub fn into_vec(self) -> Vec<usize> {
         self.elements
     }
-
-    /// Applies the cycle to `data` in place, rotating the entries at its element
-    /// positions by one so each ends up with the value of its successor. Only
-    /// those positions are touched, so `data` may be longer than the cycle needs.
-    ///
-    /// # Panics
-    /// Panics if any element of the cycle is out of bounds for `data`.
-    pub fn apply_mut<T>(&self, data: &mut [T]) {
-        assert!(
-            self.elements.iter().all(|&i| i < data.len()),
-            "cycle indices must be within the data length"
-        );
-        for pair in self.elements.windows(2) {
-            data.swap(pair[0], pair[1]);
-        }
-    }
 }
 
 impl std::ops::Deref for Cycle {
@@ -547,14 +531,6 @@ mod tests {
         assert_eq!(c.to_string(), "(0 1 2)");
         assert_eq!(c.len(), 3);
 
-        // A cycle can be applied on its own, and to any slice long enough to
-        // contain its indices (extra tail entries are left untouched).
-        let cyc = Permutation::try_new(vec![1, 2, 0, 3]).unwrap().cycles().remove(0);
-        assert_eq!(cyc.len(), 3);
-        let mut data = ['a', 'b', 'c', 'd', 'e'];
-        cyc.apply_mut(&mut data);
-        assert_eq!(data, ['b', 'c', 'a', 'd', 'e']); // positions 0,1,2 rotated; 3,4 untouched
-
         // Cycles partition {0, ..., n-1} for a random permutation.
         let p = Permutation::sample_permutation_with(50, &mut rand::rng());
         let mut all: Vec<usize> = p.cycles().into_iter().flatten().collect();
@@ -569,12 +545,6 @@ mod tests {
         p.apply(&[1, 2]);
     }
 
-    #[test]
-    #[should_panic(expected = "cycle indices must be within the data length")]
-    fn cycle_apply_mut_out_of_bounds_panics() {
-        let c = Permutation::try_new(vec![1, 2, 0]).unwrap().cycles().remove(0);
-        c.apply_mut(&mut [1, 2]); // cycle touches index 2, but data.len() == 2
-    }
 
     #[test]
     fn compose_and_inverse() {

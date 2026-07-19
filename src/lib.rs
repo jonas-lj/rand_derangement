@@ -10,11 +10,10 @@
 //! Permutations use a Fisher–Yates shuffle, and derangements use a variant of the
 //! Martínez–Panholzer–Prodinger algorithm (see [`derange`] for the reference).
 
-use std::iter::successors;
 use rand::RngExt;
+use std::iter::successors;
 
-/// Walks the cycle decomposition of `$perm`, reusing one `seen` bitmap and one
-/// cycle buffer (nothing is allocated per cycle). For each cycle it binds `$cycle`
+/// Walks the cycle decomposition of `$perm`. For each cycle it binds `$cycle`
 /// to the cycle's elements (in cyclic order, starting at the smallest) and runs
 /// `$body`. The body may read `$cycle` freely, and — since a cycle's positions are
 /// disjoint from every later cycle — may also rewrite `$perm.0` at those positions
@@ -55,7 +54,9 @@ impl Permutation {
 
     /// Wraps `map` after checking it is a permutation of `{0, ..., map.len()-1}`.
     pub fn try_new(map: Vec<usize>) -> Result<Self, NotAPermutation> {
-        is_permutation(&map).then_some(Self(map)).ok_or(NotAPermutation)
+        is_permutation(&map)
+            .then_some(Self(map))
+            .ok_or(NotAPermutation)
     }
 
     /// Samples a uniformly random permutation of `{0, 1, ..., n-1}`.
@@ -334,9 +335,9 @@ impl std::fmt::Display for OrderOverflow {
 impl std::error::Error for OrderOverflow {}
 
 /// Infinite iterator over the 2-cycle probabilities `two_cycle(u)` for
-/// `u = 0, 1, 2, ...` where `two_cycle(u) = d[u-1] / (d[u-1] + d[u])` is the probability that, with
-/// `u + 1` elements left to place, the current one closes a 2-cycle rather than
-/// extending into a longer cycle.
+/// `u = 0, 1, 2, ...`, where `two_cycle(u) = d[u-1] / (d[u-1] + d[u])` is the
+/// probability that, with `u + 1` elements left to place, the current one closes
+/// a 2-cycle rather than extending into a longer cycle.
 fn two_cycle_probabilities() -> impl Iterator<Item = f64> {
     successors(Some((0usize, 0.0f64)), |&(mut u, prev)| {
         u += 1;
@@ -389,7 +390,8 @@ pub fn shuffle<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
 /// index in that range appears exactly once.
 fn is_permutation(p: &[usize]) -> bool {
     let mut seen = vec![false; p.len()];
-    p.iter().all(|&x| x < p.len() && !std::mem::replace(&mut seen[x], true))
+    p.iter()
+        .all(|&x| x < p.len() && !std::mem::replace(&mut seen[x], true))
 }
 
 /// Greatest common divisor, via the Euclidean algorithm.
@@ -400,8 +402,7 @@ fn gcd(mut a: usize, mut b: usize) -> usize {
     a
 }
 
-/// Least common multiple, or `None` if it overflows `usize`. Divides before
-/// multiplying to keep the intermediate value as small as possible.
+/// Least common multiple, or `None` if it overflows `usize`.
 fn lcm(a: usize, b: usize) -> Option<usize> {
     (a / gcd(a, b)).checked_mul(b)
 }
@@ -447,14 +448,23 @@ mod tests {
         let mut counts: HashMap<Permutation, u32> = HashMap::new();
         let trials = 600_000;
         for _ in 0..trials {
-            *counts.entry(Permutation::sample_permutation_with(3, &mut rng)).or_default() += 1;
+            *counts
+                .entry(Permutation::sample_permutation_with(3, &mut rng))
+                .or_default() += 1;
         }
 
-        assert_eq!(counts.len(), 6, "expected all six permutations of 3 elements");
+        assert_eq!(
+            counts.len(),
+            6,
+            "expected all six permutations of 3 elements"
+        );
         let expected = 1.0 / 6.0;
         for (p, &c) in &counts {
             let freq = c as f64 / trials as f64;
-            assert!((freq - expected).abs() < 0.01, "permutation {p:?} had frequency {freq}");
+            assert!(
+                (freq - expected).abs() < 0.01,
+                "permutation {p:?} had frequency {freq}"
+            );
         }
     }
 
@@ -508,10 +518,18 @@ mod tests {
     #[test]
     fn cycles_decomposition() {
         // Cycles compared by their element vectors.
-        let collect = |p: &Permutation| p.cycles().into_iter().map(Cycle::into_vec).collect::<Vec<_>>();
+        let collect = |p: &Permutation| {
+            p.cycles()
+                .into_iter()
+                .map(Cycle::into_vec)
+                .collect::<Vec<_>>()
+        };
 
         // one long cycle
-        assert_eq!(collect(&Permutation::try_new(vec![1, 2, 0]).unwrap()), vec![vec![0, 1, 2]]);
+        assert_eq!(
+            collect(&Permutation::try_new(vec![1, 2, 0]).unwrap()),
+            vec![vec![0, 1, 2]]
+        );
         // two 2-cycles
         assert_eq!(
             collect(&Permutation::try_new(vec![1, 0, 3, 2]).unwrap()),
@@ -523,11 +541,17 @@ mod tests {
             vec![vec![0], vec![1, 2]]
         );
         // identity => all singletons; empty => no cycles
-        assert_eq!(collect(&Permutation::identity(3)), vec![vec![0], vec![1], vec![2]]);
+        assert_eq!(
+            collect(&Permutation::identity(3)),
+            vec![vec![0], vec![1], vec![2]]
+        );
         assert!(Permutation::identity(0).cycles().is_empty());
 
         // Cycle Display uses cycle notation; Deref gives slice access.
-        let c = Permutation::try_new(vec![1, 2, 0]).unwrap().cycles().remove(0);
+        let c = Permutation::try_new(vec![1, 2, 0])
+            .unwrap()
+            .cycles()
+            .remove(0);
         assert_eq!(c.to_string(), "(0 1 2)");
         assert_eq!(c.len(), 3);
 
@@ -544,7 +568,6 @@ mod tests {
         let p = Permutation::try_new(vec![1, 2, 0]).unwrap();
         p.apply(&[1, 2]);
     }
-
 
     #[test]
     fn compose_and_inverse() {
@@ -592,7 +615,11 @@ mod tests {
 
             let mut q = p.clone();
             q.inverse_mut();
-            assert_eq!(q, p.inverse(), "inverse_mut disagrees with inverse for n = {n}");
+            assert_eq!(
+                q,
+                p.inverse(),
+                "inverse_mut disagrees with inverse for n = {n}"
+            );
 
             // p ∘ p⁻¹ == identity.
             assert_eq!(p.compose(&q), Permutation::identity(n));
@@ -687,7 +714,9 @@ mod tests {
             let mut data = original.clone();
             derange(&mut data, &mut rng);
             assert!(
-                data.iter().zip(&original).all(|(now, before)| now != before),
+                data.iter()
+                    .zip(&original)
+                    .all(|(now, before)| now != before),
                 "element left in place: {data:?}"
             );
             // still the same multiset of elements
@@ -711,13 +740,22 @@ mod tests {
         let mut counts: HashMap<Permutation, u32> = HashMap::new();
         let trials = 200_000;
         for _ in 0..trials {
-            *counts.entry(Permutation::sample_derangement_with(3, &mut rng)).or_default() += 1;
+            *counts
+                .entry(Permutation::sample_derangement_with(3, &mut rng))
+                .or_default() += 1;
         }
 
-        assert_eq!(counts.len(), 2, "expected exactly two derangements of 3 elements");
+        assert_eq!(
+            counts.len(),
+            2,
+            "expected exactly two derangements of 3 elements"
+        );
         for (d, &c) in &counts {
             let freq = c as f64 / trials as f64;
-            assert!((freq - 0.5).abs() < 0.02, "derangement {d:?} had frequency {freq}");
+            assert!(
+                (freq - 0.5).abs() < 0.02,
+                "derangement {d:?} had frequency {freq}"
+            );
         }
     }
 
@@ -728,14 +766,23 @@ mod tests {
         let mut counts: HashMap<Permutation, u32> = HashMap::new();
         let trials = 900_000;
         for _ in 0..trials {
-            *counts.entry(Permutation::sample_derangement_with(4, &mut rng)).or_default() += 1;
+            *counts
+                .entry(Permutation::sample_derangement_with(4, &mut rng))
+                .or_default() += 1;
         }
 
-        assert_eq!(counts.len(), 9, "expected exactly nine derangements of 4 elements");
+        assert_eq!(
+            counts.len(),
+            9,
+            "expected exactly nine derangements of 4 elements"
+        );
         let expected = 1.0 / 9.0;
         for (d, &c) in &counts {
             let freq = c as f64 / trials as f64;
-            assert!((freq - expected).abs() < 0.01, "derangement {d:?} had frequency {freq}");
+            assert!(
+                (freq - expected).abs() < 0.01,
+                "derangement {d:?} had frequency {freq}"
+            );
         }
     }
 }

@@ -78,7 +78,7 @@ impl Permutation {
                 elements.push(cur);
                 cur = self.0[cur];
             }
-            Some(Cycle { n, elements })
+            Some(Cycle { elements })
         })
     }
 
@@ -176,21 +176,13 @@ impl std::fmt::Display for Permutation {
     }
 }
 
-/// A single cycle of a permutation on `n` symbols.
+/// A single cycle of a permutation: the elements it moves, in cyclic order.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Cycle {
-    n: usize,
     elements: Vec<usize>,
 }
 
 impl Cycle {
-    /// The number of symbols the cycle operates on, i.e. the length of the
-    /// permutation it came from. This differs from the cycle's own length,
-    /// which counts the elements it moves.
-    pub fn symbols(&self) -> usize {
-        self.n
-    }
-
     /// The number of elements the cycle moves. A cycle is never empty (a fixed
     /// point is a cycle of length 1), so there is no `is_empty`.
     #[allow(clippy::len_without_is_empty)]
@@ -204,15 +196,15 @@ impl Cycle {
     }
 
     /// Applies the cycle to `data` in place, rotating the entries at its element
-    /// positions by one so each ends up with the value of its successor.
+    /// positions by one so each ends up with the value of its successor. Only
+    /// those positions are touched, so `data` may be longer than the cycle needs.
     ///
     /// # Panics
-    /// Panics if `data.len() != self.symbols()`.
+    /// Panics if any element of the cycle is out of bounds for `data`.
     pub fn apply_mut<T>(&self, data: &mut [T]) {
-        assert_eq!(
-            data.len(),
-            self.symbols(),
-            "data length must match the cycle's symbol count"
+        assert!(
+            self.elements.iter().all(|&i| i < data.len()),
+            "cycle indices must be within the data length"
         );
         for pair in self.elements.windows(2) {
             data.swap(pair[0], pair[1]);
@@ -501,15 +493,13 @@ mod tests {
         assert_eq!(c.to_string(), "(0 1 2)");
         assert_eq!(c.len(), 3);
 
-        // A cycle carries the ambient symbol count `n` (distinct from its own len)
-        // and can be applied on its own.
-        let p = Permutation::try_new(vec![1, 2, 0, 3]).unwrap(); // (0 1 2), fixed 3
-        let cyc = p.cycles().next().unwrap();
-        assert_eq!(cyc.symbols(), 4);
+        // A cycle can be applied on its own, and to any slice long enough to
+        // contain its indices (extra tail entries are left untouched).
+        let cyc = Permutation::try_new(vec![1, 2, 0, 3]).unwrap().cycles().next().unwrap();
         assert_eq!(cyc.len(), 3);
-        let mut data = ['a', 'b', 'c', 'd'];
+        let mut data = ['a', 'b', 'c', 'd', 'e'];
         cyc.apply_mut(&mut data);
-        assert_eq!(data, ['b', 'c', 'a', 'd']); // positions 0,1,2 rotated; 3 untouched
+        assert_eq!(data, ['b', 'c', 'a', 'd', 'e']); // positions 0,1,2 rotated; 3,4 untouched
 
         // Cycles partition {0, ..., n-1} for a random permutation (IntoIterator).
         let p = sample_permutation_with(50, &mut rand::rng());
@@ -526,10 +516,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "data length must match the cycle's symbol count")]
-    fn cycle_apply_mut_length_mismatch_panics() {
-        let c = Permutation::try_new(vec![1, 0]).unwrap().cycles().next().unwrap();
-        c.apply_mut(&mut [1, 2, 3]); // len 3 != n 2
+    #[should_panic(expected = "cycle indices must be within the data length")]
+    fn cycle_apply_mut_out_of_bounds_panics() {
+        let c = Permutation::try_new(vec![1, 2, 0]).unwrap().cycles().next().unwrap();
+        c.apply_mut(&mut [1, 2]); // cycle touches index 2, but data.len() == 2
     }
 
     #[test]

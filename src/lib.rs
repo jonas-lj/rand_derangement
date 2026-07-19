@@ -13,25 +13,44 @@
 use rand::RngExt;
 use std::iter::successors;
 
-/// Fills `buf` with the elements of the next not-yet-visited cycle of `perm` (in
-/// cyclic order from its smallest element), marks them in `seen`, advances `start`
-/// past it, and returns `true`; returns `false` once every cycle has been visited.
-/// Shared one-cycle step behind [`walk_cycles!`] and [`Cycles`].
-fn next_cycle(perm: &[usize], seen: &mut [bool], start: &mut usize, buf: &mut Vec<usize>) -> bool {
-    while *start < perm.len() && seen[*start] {
-        *start += 1;
+/// Shuffles `data` in place into a uniformly random permutation of its elements,
+/// via a Fisher–Yates shuffle.
+pub fn shuffle<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
+    for i in (1..data.len()).rev() {
+        let j = rng.random_range(0..=i);
+        data.swap(i, j);
     }
-    if *start == perm.len() {
-        return false;
+}
+
+/// Rearranges `data` in place into a uniformly random derangement of its
+/// elements so every element ends up at a position different from where it started.
+///
+/// # Panics
+/// Panics if `data.len() == 1`, since no derangement of a single element exists.
+///
+/// # Reference
+/// Conrado Martínez, Alois Panholzer, and Helmut Prodinger, "Generating Random
+/// Derangements", *Proc. 5th Workshop on Analytic Algorithmics and Combinatorics
+/// (ANALCO)*, SIAM, 2008.
+/// <https://epubs.siam.org/doi/pdf/10.1137/1.9781611972986.7>
+pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
+    let n = data.len();
+    if n == 0 {
+        return;
     }
-    buf.clear();
-    let mut cur = *start;
-    while !seen[cur] {
-        seen[cur] = true;
-        buf.push(cur);
-        cur = perm[cur];
+    assert!(n != 1, "no derangement exists for n = 1");
+
+    let two_cycle_prob = two_cycle_probabilities().take(n).collect::<Vec<f64>>();
+    let mut unmarked = (0..n).collect::<Vec<usize>>();
+
+    while unmarked.len() > 1 {
+        let i = unmarked.pop().unwrap();
+        let j = rng.random_range(..unmarked.len());
+        data.swap(i, unmarked[j]);
+        if rng.random_bool(two_cycle_prob[unmarked.len()]) {
+            unmarked.swap_remove(j);
+        }
     }
-    true
 }
 
 /// Walks the cycle decomposition of `$perm`. For each cycle it binds `$cycle`
@@ -367,6 +386,27 @@ impl std::fmt::Display for OrderOverflow {
 
 impl std::error::Error for OrderOverflow {}
 
+/// Fills `buf` with the elements of the next not-yet-visited cycle of `perm` (in
+/// cyclic order from its smallest element), marks them in `seen`, advances `start`
+/// past it, and returns `true`; returns `false` once every cycle has been visited.
+/// Shared one-cycle step behind [`walk_cycles!`] and [`Cycles`].
+fn next_cycle(perm: &[usize], seen: &mut [bool], start: &mut usize, buf: &mut Vec<usize>) -> bool {
+    while *start < perm.len() && seen[*start] {
+        *start += 1;
+    }
+    if *start == perm.len() {
+        return false;
+    }
+    buf.clear();
+    let mut cur = *start;
+    while !seen[cur] {
+        seen[cur] = true;
+        buf.push(cur);
+        cur = perm[cur];
+    }
+    true
+}
+
 /// Infinite iterator over the 2-cycle probabilities `two_cycle(u)` for
 /// `u = 0, 1, 2, ...`, where `two_cycle(u) = d[u-1] / (d[u-1] + d[u])` is the
 /// probability that, with `u + 1` elements left to place, the current one closes
@@ -377,46 +417,6 @@ fn two_cycle_probabilities() -> impl Iterator<Item = f64> {
         Some((u, (1.0 - prev) / (u as f64 - prev)))
     })
     .map(|(_, p)| p)
-}
-
-/// Rearranges `data` in place into a uniformly random derangement of its
-/// elements so every element ends up at a position different from where it started.
-///
-/// # Panics
-/// Panics if `data.len() == 1`, since no derangement of a single element exists.
-///
-/// # Reference
-/// Conrado Martínez, Alois Panholzer, and Helmut Prodinger, "Generating Random
-/// Derangements", *Proc. 5th Workshop on Analytic Algorithmics and Combinatorics
-/// (ANALCO)*, SIAM, 2008.
-/// <https://epubs.siam.org/doi/pdf/10.1137/1.9781611972986.7>
-pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
-    let n = data.len();
-    if n == 0 {
-        return;
-    }
-    assert!(n != 1, "no derangement exists for n = 1");
-
-    let two_cycle_prob = two_cycle_probabilities().take(n).collect::<Vec<f64>>();
-    let mut unmarked = (0..n).collect::<Vec<usize>>();
-
-    while unmarked.len() > 1 {
-        let i = unmarked.pop().unwrap();
-        let j = rng.random_range(..unmarked.len());
-        data.swap(i, unmarked[j]);
-        if rng.random_bool(two_cycle_prob[unmarked.len()]) {
-            unmarked.swap_remove(j);
-        }
-    }
-}
-
-/// Shuffles `data` in place into a uniformly random permutation of its elements,
-/// via a Fisher–Yates shuffle.
-pub fn shuffle<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
-    for i in (1..data.len()).rev() {
-        let j = rng.random_range(0..=i);
-        data.swap(i, j);
-    }
 }
 
 /// Returns `true` iff `p` is a permutation of `{0, 1, ..., p.len()-1}`, i.e. every

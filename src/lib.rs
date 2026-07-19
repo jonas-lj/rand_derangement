@@ -67,6 +67,22 @@ pub fn sample_derangement(n: usize) -> Permutation {
     sample_derangement_with(n, &mut rand::rng())
 }
 
+/// Samples a uniformly random permutation of `{0, 1, ..., n-1}` using the given
+/// random number generator, via a Fisher–Yates shuffle.
+pub fn sample_permutation_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
+    let mut permutation = (0..n).collect::<Vec<usize>>();
+    for i in (1..n).rev() {
+        let j = rng.random_range(0..=i);
+        permutation.swap(i, j);
+    }
+    Permutation(permutation)
+}
+
+/// Samples a uniformly random permutation of `{0, 1, ..., n-1}`.
+pub fn sample_permutation(n: usize) -> Permutation {
+    sample_permutation_with(n, &mut rand::rng())
+}
+
 /// Returns `true` iff `p` is a permutation of `{0, 1, ..., p.len()-1}`, i.e. every
 /// index in that range appears exactly once.
 fn is_permutation(p: &[usize]) -> bool {
@@ -78,7 +94,7 @@ fn is_permutation(p: &[usize]) -> bool {
 
 /// Returns `true` iff `p` is a derangement: a permutation of
 /// `{0, 1, ..., p.len()-1}` with no fixed point (`p[i] != i` for all `i`).
-pub fn is_derangement(p: &[usize]) -> bool {
+fn is_derangement(p: &[usize]) -> bool {
     is_permutation(p) && p.iter().enumerate().all(|(i, &pi)| i != pi)
 }
 
@@ -109,8 +125,7 @@ impl Permutation {
         Permutation(inverse)
     }
 
-    /// Applies the permutation to `data`, returning a new vector `out` with
-    /// `out[i] = data[self[i]]`.
+    /// Applies the permutation to `data`.
     ///
     /// # Panics
     /// Panics if `data.len() != self.len()`.
@@ -123,11 +138,7 @@ impl Permutation {
         self.0.iter().map(|&i| data[i].clone()).collect()
     }
 
-    /// Applies the permutation to `data` in place: afterwards `data[i]` holds the
-    /// element that was at `data[self[i]]`. The in-place equivalent of [`apply`],
-    /// but by rotating each cycle with swaps, so no `T: Clone` bound is needed.
-    ///
-    /// [`apply`]: Permutation::apply
+    /// Applies the permutation to `data` in place
     ///
     /// # Panics
     /// Panics if `data.len() != self.len()`.
@@ -257,6 +268,37 @@ mod tests {
     #[test]
     fn empty_input() {
         assert!(sample_derangement_with(0, &mut rand::rng()).is_empty());
+    }
+
+    #[test]
+    fn samples_are_valid_permutations() {
+        let mut rng = rand::rng();
+        // Unlike derangements, permutations exist for n = 0 and n = 1.
+        for n in [0, 1, 2, 3, 5, 8, 50, 100] {
+            for _ in 0..500 {
+                let p = sample_permutation_with(n, &mut rng);
+                assert_eq!(p.len(), n);
+                assert!(is_permutation(&p), "not a permutation for n = {n}: {p:?}");
+            }
+        }
+    }
+
+    /// All 6 permutations of 3 elements should appear with frequency ~1/6.
+    #[test]
+    fn sample_permutation_is_uniform_for_n3() {
+        let mut rng = rand::rng();
+        let mut counts: HashMap<Permutation, u32> = HashMap::new();
+        let trials = 600_000;
+        for _ in 0..trials {
+            *counts.entry(sample_permutation_with(3, &mut rng)).or_default() += 1;
+        }
+
+        assert_eq!(counts.len(), 6, "expected all six permutations of 3 elements");
+        let expected = 1.0 / 6.0;
+        for (p, &c) in &counts {
+            let freq = c as f64 / trials as f64;
+            assert!((freq - expected).abs() < 0.01, "permutation {p:?} had frequency {freq}");
+        }
     }
 
     #[test]

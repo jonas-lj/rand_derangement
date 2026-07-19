@@ -56,61 +56,44 @@ impl Permutation {
         Permutation(other.0.iter().map(|&i| self.0[i]).collect())
     }
 
+    /// Walks the cycle decomposition, calling `f` once per cycle with the cycle's
+    /// elements in cyclic order (starting at its smallest). A single buffer is
+    /// reused across cycles, so nothing is allocated per cycle. This is the shared
+    /// engine behind [`cycles`](Permutation::cycles), [`parity`](Permutation::parity),
+    /// [`order`](Permutation::order), and [`apply_mut`](Permutation::apply_mut).
+    fn for_each_cycle(&self, mut f: impl FnMut(&[usize])) {
+        let n = self.0.len();
+        let mut seen = vec![false; n];
+        let mut cycle = Vec::new();
+        for start in 0..n {
+            if seen[start] {
+                continue;
+            }
+            cycle.clear();
+            let mut cur = start;
+            while !seen[cur] {
+                seen[cur] = true;
+                cycle.push(cur);
+                cur = self.0[cur];
+            }
+            f(&cycle);
+        }
+    }
+
     /// Iterates over the cycles of the permutation, each beginning at its smallest
     /// element. Fixed points appear as singleton cycles, so the cycles partition
     /// `{0, ..., n-1}`.
-    pub fn cycles(&self) -> impl Iterator<Item = Cycle> + '_ {
-        let n = self.0.len();
-        let mut seen = vec![false; n];
-        let mut start = 0;
-        std::iter::from_fn(move || {
-            // Advance to the next element not yet part of a cycle.
-            while start < n && seen[start] {
-                start += 1;
-            }
-            if start == n {
-                return None;
-            }
-            let mut elements = Vec::new();
-            let mut cur = start;
-            while !seen[cur] {
-                seen[cur] = true;
-                elements.push(cur);
-                cur = self.0[cur];
-            }
-            Some(Cycle { elements })
-        })
-    }
-
-    /// Iterates over the lengths of the cycles. Allocation-free: unlike
-    /// [`cycles`](Permutation::cycles) it never materializes the elements, so it
-    /// is the cheap way to compute cycle statistics.
-    fn cycle_lengths(&self) -> impl Iterator<Item = usize> + '_ {
-        let n = self.0.len();
-        let mut seen = vec![false; n];
-        let mut start = 0;
-        std::iter::from_fn(move || {
-            while start < n && seen[start] {
-                start += 1;
-            }
-            if start == n {
-                return None;
-            }
-            let mut len = 0;
-            let mut cur = start;
-            while !seen[cur] {
-                seen[cur] = true;
-                len += 1;
-                cur = self.0[cur];
-            }
-            Some(len)
-        })
+    pub fn cycles(&self) -> impl Iterator<Item = Cycle> {
+        let mut cycles = Vec::new();
+        self.for_each_cycle(|elements| cycles.push(Cycle { elements: elements.to_vec() }));
+        cycles.into_iter()
     }
 
     /// The parity (sign) of the permutation.
     pub fn parity(&self) -> Parity {
-        let transpositions = self.symbols() - self.cycle_lengths().count();
-        if transpositions.is_multiple_of(2) {
+        let mut cycle_count = 0;
+        self.for_each_cycle(|_| cycle_count += 1);
+        if (self.symbols() - cycle_count).is_multiple_of(2) {
             Parity::Even
         } else {
             Parity::Odd
@@ -125,14 +108,13 @@ impl Permutation {
     /// Panics if the order overflows `usize`. The order can be astronomically
     /// large (up to Landau's function `g(n)`) for large permutations.
     pub fn order(&self) -> usize {
-        fn gcd(a: usize, b: usize) -> usize {
-            if b == 0 { a } else { gcd(b, a % b) }
-        }
-        self.cycle_lengths().fold(1usize, |acc, len| {
-            (acc / gcd(acc, len))
-                .checked_mul(len)
-                .expect("permutation order overflows usize")
-        })
+        let mut order = 1usize;
+        self.for_each_cycle(|cycle| {
+            order = (order / gcd(order, cycle.len()))
+                .checked_mul(cycle.len())
+                .expect("permutation order overflows usize");
+        });
+        order
     }
 
     /// Applies the permutation to `data`.
@@ -158,27 +140,12 @@ impl Permutation {
             self.symbols(),
             "data length must match permutation length"
         );
-        // Walk each cycle directly and rotate it by one via swaps down consecutive
-        // elements. Done inline (rather than via `cycles()`) to avoid allocating a
-        // `Vec` per cycle.
-        let n = self.0.len();
-        let mut seen = vec![false; n];
-        for start in 0..n {
-            if seen[start] {
-                continue;
+        // Rotate each cycle by one via swaps down consecutive elements.
+        self.for_each_cycle(|cycle| {
+            for pair in cycle.windows(2) {
+                data.swap(pair[0], pair[1]);
             }
-            let mut cur = start;
-            seen[cur] = true;
-            loop {
-                let next = self.0[cur];
-                if next == start {
-                    break;
-                }
-                data.swap(cur, next);
-                seen[next] = true;
-                cur = next;
-            }
-        }
+        });
     }
 
     /// Returns `true` iff this permutation has no fixed point (`self[i] != i`).
@@ -433,6 +400,11 @@ fn is_permutation(p: &[usize]) -> bool {
 /// `{0, 1, ..., p.len()-1}` with no fixed point (`p[i] != i` for all `i`).
 fn is_derangement(p: &[usize]) -> bool {
     is_permutation(p) && p.iter().enumerate().all(|(i, &pi)| i != pi)
+}
+
+/// Greatest common divisor, via the Euclidean algorithm.
+fn gcd(a: usize, b: usize) -> usize {
+    if b == 0 { a } else { gcd(b, a % b) }
 }
 
 #[cfg(test)]

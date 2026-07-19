@@ -43,26 +43,14 @@ impl Permutation {
     /// Inverts the permutation in place, leaving `self` equal to what
     /// [`inverse`](Permutation::inverse) would return, without allocating a new map.
     pub fn inverse_mut(&mut self) {
-        let n = self.0.len();
-        let mut seen = vec![false; n];
-        for start in 0..n {
-            if seen[start] {
-                continue;
+        // Reverse each cycle: every element is repointed to its predecessor.
+        self.for_each_cycle_mut(|map, cycle| {
+            let last = cycle[cycle.len() - 1];
+            for pair in cycle.windows(2) {
+                map[pair[1]] = pair[0];
             }
-            // Reverse this cycle in place: each element now maps to its
-            // predecessor. Save the successor before overwriting it.
-            seen[start] = true;
-            let mut prev = start;
-            let mut cur = self.0[start];
-            while cur != start {
-                seen[cur] = true;
-                let next = self.0[cur];
-                self.0[cur] = prev;
-                prev = cur;
-                cur = next;
-            }
-            self.0[start] = prev;
-        }
+            map[cycle[0]] = last;
+        });
     }
 
     /// The composition `self ∘ other`.
@@ -97,6 +85,30 @@ impl Permutation {
                 cur = self.0[cur];
             }
             f(&cycle);
+        }
+    }
+
+    /// Like [`for_each_cycle`](Permutation::for_each_cycle), but hands the callback
+    /// mutable access to the map alongside the cycle's element indices, so a cycle
+    /// can be rewritten in place. This is sound because a cycle's positions are
+    /// disjoint from every later cycle, so rewriting them cannot disturb the
+    /// remaining discovery (which reads only later, untouched positions).
+    fn for_each_cycle_mut(&mut self, mut f: impl FnMut(&mut [usize], &[usize])) {
+        let n = self.0.len();
+        let mut seen = vec![false; n];
+        let mut cycle = Vec::new();
+        for start in 0..n {
+            if seen[start] {
+                continue;
+            }
+            cycle.clear();
+            let mut cur = start;
+            while !seen[cur] {
+                seen[cur] = true;
+                cycle.push(cur);
+                cur = self.0[cur];
+            }
+            f(&mut self.0, &cycle);
         }
     }
 

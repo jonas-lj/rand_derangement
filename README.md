@@ -34,7 +34,7 @@ assert_eq!(p.order(), Ok(3));              // lcm of cycle lengths
 assert_eq!(p.parity(), Parity::Even);      // decomposes into 2 transpositions
 
 // cycles: a 3-cycle and the fixed point 3, in cycle notation.
-let cycles: String = p.cycles().iter().map(|c| c.to_string()).collect();
+let cycles: String = p.cycles().map(|c| c.to_string()).collect();
 assert_eq!(cycles, "(0 1 2)(3)");
 
 assert_eq!(format!("{p}"), "[1 2 0 3]");   // one-line notation

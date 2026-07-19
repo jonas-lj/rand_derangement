@@ -128,13 +128,15 @@ impl Permutation {
         Permutation(other.0.iter().map(|&i| self.0[i]).collect())
     }
 
-    /// The cycles of the permutation, each beginning at its smallest element.
-    /// Fixed points appear as singleton cycles, so the cycles partition
-    /// `{0, ..., n-1}`.
-    pub fn cycles(&self) -> Vec<Cycle> {
-        let mut cycles = Vec::new();
-        walk_cycles!(self, cycle => cycles.push(Cycle { elements: cycle.clone() }));
-        cycles
+    /// A lazy iterator over the cycles of the permutation, each beginning at its
+    /// smallest element. Fixed points appear as singleton cycles, so the cycles
+    /// partition `{0, ..., n-1}`.
+    pub fn cycles(&self) -> Cycles<'_> {
+        Cycles {
+            perm: &self.0,
+            seen: vec![false; self.0.len()],
+            start: 0,
+        }
     }
 
     /// The parity (sign) of the permutation.
@@ -256,6 +258,37 @@ impl std::fmt::Display for Permutation {
             write!(f, "{x}")?;
         }
         write!(f, "]")
+    }
+}
+
+/// Lazy iterator over the cycles of a permutation, returned by
+/// [`Permutation::cycles`]. Borrows the permutation's map; each [`Cycle`] is built
+/// on demand as the iterator is advanced.
+pub struct Cycles<'a> {
+    perm: &'a [usize],
+    seen: Vec<bool>,
+    start: usize,
+}
+
+impl Iterator for Cycles<'_> {
+    type Item = Cycle;
+
+    fn next(&mut self) -> Option<Cycle> {
+        // Advance to the next element not yet part of a cycle.
+        while self.start < self.perm.len() && self.seen[self.start] {
+            self.start += 1;
+        }
+        if self.start == self.perm.len() {
+            return None;
+        }
+        let mut elements = Vec::new();
+        let mut cur = self.start;
+        while !self.seen[cur] {
+            self.seen[cur] = true;
+            elements.push(cur);
+            cur = self.perm[cur];
+        }
+        Some(Cycle { elements })
     }
 }
 
@@ -519,12 +552,7 @@ mod tests {
     #[test]
     fn cycles_decomposition() {
         // Cycles compared by their element vectors.
-        let collect = |p: &Permutation| {
-            p.cycles()
-                .into_iter()
-                .map(Cycle::into_vec)
-                .collect::<Vec<_>>()
-        };
+        let collect = |p: &Permutation| p.cycles().map(Cycle::into_vec).collect::<Vec<_>>();
 
         // one long cycle
         assert_eq!(
@@ -546,19 +574,20 @@ mod tests {
             collect(&Permutation::identity(3)),
             vec![vec![0], vec![1], vec![2]]
         );
-        assert!(Permutation::identity(0).cycles().is_empty());
+        assert_eq!(Permutation::identity(0).cycles().count(), 0);
 
         // Cycle Display uses cycle notation; Deref gives slice access.
         let c = Permutation::try_new(vec![1, 2, 0])
             .unwrap()
             .cycles()
-            .remove(0);
+            .next()
+            .unwrap();
         assert_eq!(c.to_string(), "(0 1 2)");
         assert_eq!(c.len(), 3);
 
         // Cycles partition {0, ..., n-1} for a random permutation.
         let p = Permutation::sample_permutation_with(50, &mut rand::rng());
-        let mut all: Vec<usize> = p.cycles().into_iter().flatten().collect();
+        let mut all: Vec<usize> = p.cycles().flatten().collect();
         all.sort_unstable();
         assert_eq!(all, (0..50).collect::<Vec<_>>());
     }

@@ -16,7 +16,7 @@ fn main() {
     let mut sum_ratio = 0.0f64;
     for _ in 0..trials {
         let p = Permutation::sample_permutation_with(n, &mut rng);
-        let longest = p.cycles().iter().map(|c| c.len()).max().unwrap_or(0);
+        let longest = p.cycles().map(|c| c.len()).max().unwrap_or(0);
         sum_ratio += longest as f64 / n as f64;
     }
     let estimate = sum_ratio / trials as f64;

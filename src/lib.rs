@@ -13,6 +13,32 @@
 use std::iter::successors;
 use rand::RngExt;
 
+/// Walks the cycle decomposition of `$perm`, reusing one `seen` bitmap and one
+/// cycle buffer (nothing is allocated per cycle). For each cycle it binds
+/// `$cycle` to the cycle's elements (in cyclic order, starting at the smallest)
+/// and runs `$body`. Shared skeleton for `for_each_cycle` and its mutable sibling,
+/// which differ only in how they pass the cycle to their callback.
+macro_rules! walk_cycles {
+    ($perm:expr, $cycle:ident => $body:expr) => {{
+        let n = $perm.0.len();
+        let mut seen = vec![false; n];
+        let mut $cycle = Vec::new();
+        for start in 0..n {
+            if seen[start] {
+                continue;
+            }
+            $cycle.clear();
+            let mut cur = start;
+            while !seen[cur] {
+                seen[cur] = true;
+                $cycle.push(cur);
+                cur = $perm.0[cur];
+            }
+            $body;
+        }
+    }};
+}
+
 /// A permutation of `{0, 1, ..., n-1}`, represented by its map: element `i` maps
 /// to `self[i]`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -101,22 +127,7 @@ impl Permutation {
     /// elements in cyclic order (starting at its smallest). A single buffer is
     /// reused across cycles, so nothing is allocated per cycle.
     fn for_each_cycle(&self, mut f: impl FnMut(&[usize])) {
-        let n = self.0.len();
-        let mut seen = vec![false; n];
-        let mut cycle = Vec::new();
-        for start in 0..n {
-            if seen[start] {
-                continue;
-            }
-            cycle.clear();
-            let mut cur = start;
-            while !seen[cur] {
-                seen[cur] = true;
-                cycle.push(cur);
-                cur = self.0[cur];
-            }
-            f(&cycle);
-        }
+        walk_cycles!(self, cycle => f(&cycle));
     }
 
     /// Like [`for_each_cycle`](Permutation::for_each_cycle), but hands the callback
@@ -125,22 +136,7 @@ impl Permutation {
     /// disjoint from every later cycle, so rewriting them cannot disturb the
     /// remaining discovery (which reads only later, untouched positions).
     fn for_each_cycle_mut(&mut self, mut f: impl FnMut(&mut [usize], &[usize])) {
-        let n = self.0.len();
-        let mut seen = vec![false; n];
-        let mut cycle = Vec::new();
-        for start in 0..n {
-            if seen[start] {
-                continue;
-            }
-            cycle.clear();
-            let mut cur = start;
-            while !seen[cur] {
-                seen[cur] = true;
-                cycle.push(cur);
-                cur = self.0[cur];
-            }
-            f(&mut self.0, &cycle);
-        }
+        walk_cycles!(self, cycle => f(&mut self.0, &cycle));
     }
 
     /// The cycles of the permutation, each beginning at its smallest element.

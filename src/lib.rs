@@ -101,8 +101,7 @@ impl Permutation {
     }
 
     /// The order of the permutation: the least `k >= 1` such that applying it `k`
-    /// times gives the identity. It equals the least common multiple of the cycle
-    /// lengths; the identity and the empty permutation have order 1.
+    /// times gives the identity.
     ///
     /// # Panics
     /// Panics if the order overflows `usize`. The order can be astronomically
@@ -195,8 +194,6 @@ impl TryFrom<Vec<usize>> for Permutation {
     }
 }
 
-/// Formats the permutation in one-line notation: the images `self[0], self[1],
-/// ...` in order, e.g. `[1 2 0]`.
 impl std::fmt::Display for Permutation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[")?;
@@ -281,16 +278,6 @@ impl std::fmt::Display for Cycle {
 pub enum Parity {
     Even,
     Odd,
-}
-
-impl Parity {
-    /// The sign of the permutation: `+1` if even, `-1` if odd.
-    pub fn sign(self) -> i32 {
-        match self {
-            Parity::Even => 1,
-            Parity::Odd => -1,
-        }
-    }
 }
 
 /// Error returned when a `Vec<usize>` is not a valid permutation of `{0, ..., n-1}`.
@@ -597,9 +584,6 @@ mod tests {
         assert_eq!(parity(vec![1, 2, 0]), Parity::Even); // a 3-cycle = 2 transpositions
         assert_eq!(parity(vec![1, 0, 3, 2]), Parity::Even); // two transpositions
         assert_eq!(parity(vec![]), Parity::Even); // empty is even
-
-        assert_eq!(Parity::Even.sign(), 1);
-        assert_eq!(Parity::Odd.sign(), -1);
     }
 
     #[test]
@@ -646,15 +630,18 @@ mod tests {
 
     #[test]
     fn parity_is_multiplicative() {
-        // sign(p ∘ q) == sign(p) * sign(q), and inverse has the same parity.
+        // parity(p ∘ q) is even iff p and q have equal parity, and the inverse
+        // has the same parity as the permutation.
         let mut rng = rand::rng();
         for _ in 0..200 {
             let p = sample_permutation_with(9, &mut rng);
             let q = sample_permutation_with(9, &mut rng);
-            assert_eq!(
-                p.compose(&q).parity().sign(),
-                p.parity().sign() * q.parity().sign()
-            );
+            let expected = if p.parity() == q.parity() {
+                Parity::Even
+            } else {
+                Parity::Odd
+            };
+            assert_eq!(p.compose(&q).parity(), expected);
             assert_eq!(p.inverse().parity(), p.parity());
         }
     }

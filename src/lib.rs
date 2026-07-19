@@ -199,6 +199,15 @@ pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
     }
 }
 
+/// Shuffles `data` in place into a uniformly random permutation of its elements,
+/// via a Fisher–Yates shuffle.
+pub fn shuffle<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
+    for i in (1..data.len()).rev() {
+        let j = rng.random_range(0..=i);
+        data.swap(i, j);
+    }
+}
+
 /// Samples a uniformly random derangement of `{0, 1, ..., n-1}` using the given
 /// random number generator.
 ///
@@ -222,10 +231,7 @@ pub fn sample_derangement(n: usize) -> Permutation {
 /// random number generator, via a Fisher–Yates shuffle.
 pub fn sample_permutation_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
     let mut permutation = (0..n).collect::<Vec<usize>>();
-    for i in (1..n).rev() {
-        let j = rng.random_range(0..=i);
-        permutation.swap(i, j);
-    }
+    shuffle(&mut permutation, rng);
     Permutation(permutation)
 }
 
@@ -373,6 +379,19 @@ mod tests {
         assert!(!is_derangement(&[0, 2, 1])); // fixed point at 0
         assert!(!is_derangement(&[1, 1, 0])); // not a permutation
         assert!(is_derangement(&[]) && is_permutation(&[])); // vacuously true
+    }
+
+    #[test]
+    fn shuffle_preserves_multiset() {
+        let mut rng = rand::rng();
+        let original: Vec<char> = ('a'..='z').collect();
+        for _ in 0..1000 {
+            let mut data = original.clone();
+            shuffle(&mut data, &mut rng);
+            let mut sorted = data.clone();
+            sorted.sort_unstable();
+            assert_eq!(sorted, original, "shuffle lost or duplicated elements");
+        }
     }
 
     #[test]

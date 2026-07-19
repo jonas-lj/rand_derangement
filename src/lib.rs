@@ -15,10 +15,7 @@ use std::ops::Index;
 use rand::RngExt;
 
 /// A permutation of `{0, 1, ..., n-1}`, represented by its map: element `i` maps
-/// to `self[i]`. Valid by construction — built by [`sample_derangement`] and
-/// friends, or checked via [`Permutation::try_new`] / `TryFrom<Vec<usize>>`.
-///
-/// Derefs to `[usize]`, so slice methods and indexing (`perm[i]`) work directly.
+/// to `self[i]`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Permutation(Vec<usize>);
 
@@ -58,9 +55,7 @@ impl Permutation {
 
     /// Walks the cycle decomposition, calling `f` once per cycle with the cycle's
     /// elements in cyclic order (starting at its smallest). A single buffer is
-    /// reused across cycles, so nothing is allocated per cycle. This is the shared
-    /// engine behind [`cycles`](Permutation::cycles), [`parity`](Permutation::parity),
-    /// [`order`](Permutation::order), and [`apply_mut`](Permutation::apply_mut).
+    /// reused across cycles, so nothing is allocated per cycle.
     fn for_each_cycle(&self, mut f: impl FnMut(&[usize])) {
         let n = self.0.len();
         let mut seen = vec![false; n];
@@ -81,8 +76,7 @@ impl Permutation {
     }
 
     /// Iterates over the cycles of the permutation, each beginning at its smallest
-    /// element. Fixed points appear as singleton cycles, so the cycles partition
-    /// `{0, ..., n-1}`.
+    /// element.
     pub fn cycles(&self) -> impl Iterator<Item = Cycle> {
         let mut cycles = Vec::new();
         self.for_each_cycle(|elements| cycles.push(Cycle { elements: elements.to_vec() }));
@@ -101,19 +95,28 @@ impl Permutation {
     }
 
     /// The order of the permutation: the least `k >= 1` such that applying it `k`
-    /// times gives the identity.
+    /// times gives the identity. It equals the least common multiple of the cycle
+    /// lengths; the identity and the empty permutation have order 1.
     ///
-    /// # Panics
-    /// Panics if the order overflows `usize`. The order can be astronomically
-    /// large (up to Landau's function `g(n)`) for large permutations.
-    pub fn order(&self) -> usize {
+    /// # Errors
+    /// Returns [`OrderOverflow`] if the order does not fit in a `usize`.
+    pub fn order(&self) -> Result<usize, OrderOverflow> {
         let mut order = 1usize;
+        let mut overflowed = false;
         self.for_each_cycle(|cycle| {
-            order = (order / gcd(order, cycle.len()))
-                .checked_mul(cycle.len())
-                .expect("permutation order overflows usize");
+            if overflowed {
+                return;
+            }
+            match (order / gcd(order, cycle.len())).checked_mul(cycle.len()) {
+                Some(next) => order = next,
+                None => overflowed = true,
+            }
         });
-        order
+        if overflowed {
+            Err(OrderOverflow)
+        } else {
+            Ok(order)
+        }
     }
 
     /// Applies the permutation to `data`.
@@ -291,6 +294,18 @@ impl std::fmt::Display for NotAPermutation {
 }
 
 impl std::error::Error for NotAPermutation {}
+
+/// Error returned by [`Permutation::order`] when the order does not fit in a `usize`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OrderOverflow;
+
+impl std::fmt::Display for OrderOverflow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("permutation order does not fit in a usize")
+    }
+}
+
+impl std::error::Error for OrderOverflow {}
 
 /// Infinite iterator over the 2-cycle probabilities `two_cycle(u)` for
 /// `u = 0, 1, 2, ...` where `two_cycle(u) = d[u-1] / (d[u-1] + d[u])` is the probability that, with
@@ -587,6 +602,34 @@ mod tests {
         assert_eq!(parity(vec![1, 2, 0]), Parity::Even); // a 3-cycle = 2 transpositions
         assert_eq!(parity(vec![1, 0, 3, 2]), Parity::Even); // two transpositions
         assert_eq!(parity(vec![]), Parity::Even); // empty is even
+    }
+
+    #[test]
+    fn order_is_lcm_of_cycle_lengths() {
+        // A permutation that is a disjoint union of cycles of the given lengths.
+        fn with_cycle_lengths(lengths: &[usize]) -> Permutation {
+            let mut map = Vec::new();
+            let mut base = 0;
+            for &len in lengths {
+                for i in 0..len {
+                    map.push(base + (i + 1) % len);
+                }
+                base += len;
+            }
+            Permutation::try_new(map).unwrap()
+        }
+
+        assert_eq!(Permutation::identity(5).order(), Ok(1));
+        assert_eq!(Permutation::identity(0).order(), Ok(1)); // empty
+        assert_eq!(with_cycle_lengths(&[2]).order(), Ok(2)); // transposition
+        assert_eq!(with_cycle_lengths(&[3]).order(), Ok(3)); // 3-cycle
+        assert_eq!(with_cycle_lengths(&[3, 2]).order(), Ok(6)); // lcm(3, 2)
+        assert_eq!(with_cycle_lengths(&[4, 6]).order(), Ok(12)); // lcm(4, 6)
+
+        // Disjoint cycles of distinct primes: the order is their product, which
+        // exceeds usize, so it overflows.
+        let primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53];
+        assert_eq!(with_cycle_lengths(&primes).order(), Err(OrderOverflow));
     }
 
     #[test]

@@ -13,6 +13,27 @@
 use rand::RngExt;
 use std::iter::successors;
 
+/// Fills `buf` with the elements of the next not-yet-visited cycle of `perm` (in
+/// cyclic order from its smallest element), marks them in `seen`, advances `start`
+/// past it, and returns `true`; returns `false` once every cycle has been visited.
+/// Shared one-cycle step behind [`walk_cycles!`] and [`Cycles`].
+fn next_cycle(perm: &[usize], seen: &mut [bool], start: &mut usize, buf: &mut Vec<usize>) -> bool {
+    while *start < perm.len() && seen[*start] {
+        *start += 1;
+    }
+    if *start == perm.len() {
+        return false;
+    }
+    buf.clear();
+    let mut cur = *start;
+    while !seen[cur] {
+        seen[cur] = true;
+        buf.push(cur);
+        cur = perm[cur];
+    }
+    true
+}
+
 /// Walks the cycle decomposition of `$perm`. For each cycle it binds `$cycle`
 /// to the cycle's elements (in cyclic order, starting at the smallest) and runs
 /// `$body`. The body may read `$cycle` freely, and — since a cycle's positions are
@@ -21,20 +42,10 @@ use std::iter::successors;
 /// the body is inlined into the walk loop, not a closure.
 macro_rules! walk_cycles {
     ($perm:expr, $cycle:ident => $body:expr) => {{
-        let n = $perm.0.len();
-        let mut seen = vec![false; n];
+        let mut seen = vec![false; $perm.0.len()];
+        let mut start = 0;
         let mut $cycle = Vec::new();
-        for start in 0..n {
-            if seen[start] {
-                continue;
-            }
-            $cycle.clear();
-            let mut cur = start;
-            while !seen[cur] {
-                seen[cur] = true;
-                $cycle.push(cur);
-                cur = $perm.0[cur];
-            }
+        while next_cycle(&$perm.0, &mut seen, &mut start, &mut $cycle) {
             $body;
         }
     }};
@@ -274,21 +285,9 @@ impl Iterator for Cycles<'_> {
     type Item = Cycle;
 
     fn next(&mut self) -> Option<Cycle> {
-        // Advance to the next element not yet part of a cycle.
-        while self.start < self.perm.len() && self.seen[self.start] {
-            self.start += 1;
-        }
-        if self.start == self.perm.len() {
-            return None;
-        }
         let mut elements = Vec::new();
-        let mut cur = self.start;
-        while !self.seen[cur] {
-            self.seen[cur] = true;
-            elements.push(cur);
-            cur = self.perm[cur];
-        }
-        Some(Cycle { elements })
+        next_cycle(self.perm, &mut self.seen, &mut self.start, &mut elements)
+            .then_some(Cycle { elements })
     }
 }
 

@@ -6,7 +6,7 @@
 //!
 //! Run with: `cargo run --release --example golomb_dickman`
 
-use rand_derangement::sample_permutation_with;
+use rand_derangement::Permutation;
 
 fn main() {
     let n = 1_000usize;
@@ -15,7 +15,7 @@ fn main() {
     let mut rng = rand::rng();
     let mut sum_ratio = 0.0f64;
     for _ in 0..trials {
-        let p = sample_permutation_with(n, &mut rng);
+        let p = Permutation::sample_permutation_with(n, &mut rng);
         let longest = p.cycles().iter().map(|c| c.len()).max().unwrap_or(0);
         sum_ratio += longest as f64 / n as f64;
     }

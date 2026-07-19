@@ -1,8 +1,8 @@
 //! A small library for random permutations and derangements of
 //! `{0, 1, ..., n-1}` (a *derangement* is a permutation with no fixed points).
 //!
-//! - [`sample_permutation`] / [`sample_derangement`] draw a uniformly random
-//!   permutation / derangement.
+//! - [`Permutation::sample_permutation`] / [`Permutation::sample_derangement`]
+//!   draw a uniformly random permutation / derangement.
 //! - [`shuffle`] / [`derange`] do the same in place on an arbitrary slice.
 //! - [`Permutation`] is a validated wrapper offering [`apply`](Permutation::apply),
 //!   [`inverse`](Permutation::inverse), cycle-notation `Display`, and more.
@@ -11,7 +11,6 @@
 //! Martínez–Panholzer–Prodinger algorithm (see [`derange`] for the reference).
 
 use std::iter::successors;
-use std::ops::Index;
 use rand::RngExt;
 
 /// A permutation of `{0, 1, ..., n-1}`, represented by its map: element `i` maps
@@ -29,6 +28,38 @@ impl Permutation {
     /// Wraps `map` after checking it is a permutation of `{0, ..., map.len()-1}`.
     pub fn try_new(map: Vec<usize>) -> Result<Self, NotAPermutation> {
         is_permutation(&map).then_some(Self(map)).ok_or(NotAPermutation)
+    }
+
+    /// Samples a uniformly random permutation of `{0, 1, ..., n-1}`.
+    pub fn sample_permutation(n: usize) -> Permutation {
+        Self::sample_permutation_with(n, &mut rand::rng())
+    }
+
+    /// Samples a uniformly random permutation of `{0, 1, ..., n-1}` using the
+    /// given random number generator, via a Fisher–Yates shuffle.
+    pub fn sample_permutation_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
+        let mut permutation = (0..n).collect::<Vec<usize>>();
+        shuffle(&mut permutation, rng);
+        Permutation(permutation)
+    }
+
+    /// Samples a uniformly random derangement of `{0, 1, ..., n-1}`.
+    ///
+    /// # Panics
+    /// Panics if `n == 1`, since no derangement of a single element exists.
+    pub fn sample_derangement(n: usize) -> Permutation {
+        Self::sample_derangement_with(n, &mut rand::rng())
+    }
+
+    /// Samples a uniformly random derangement of `{0, 1, ..., n-1}` using the
+    /// given random number generator.
+    ///
+    /// # Panics
+    /// Panics if `n == 1`, since no derangement of a single element exists.
+    pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
+        let mut permutation = (0..n).collect::<Vec<usize>>();
+        derange(&mut permutation, rng);
+        Permutation(permutation)
     }
 
     /// The inverse permutation, satisfying `self.inverse()[self[i]] == i`.
@@ -59,8 +90,8 @@ impl Permutation {
     /// Panics if `self.len() != other.len()`.
     pub fn compose(&self, other: &Permutation) -> Permutation {
         assert_eq!(
-            self.symbols(),
-            other.symbols(),
+            self.len(),
+            other.len(),
             "permutations must have the same length"
         );
         Permutation(other.0.iter().map(|&i| self.0[i]).collect())
@@ -125,7 +156,7 @@ impl Permutation {
     pub fn parity(&self) -> Parity {
         let mut cycle_count = 0;
         self.for_each_cycle(|_| cycle_count += 1);
-        if (self.symbols() - cycle_count).is_multiple_of(2) {
+        if (self.len() - cycle_count).is_multiple_of(2) {
             Parity::Even
         } else {
             Parity::Odd
@@ -164,7 +195,7 @@ impl Permutation {
     pub fn apply<T: Clone>(&self, data: &[T]) -> Vec<T> {
         assert_eq!(
             data.len(),
-            self.symbols(),
+            self.len(),
             "data length must match permutation length"
         );
         self.0.iter().map(|&i| data[i].clone()).collect()
@@ -177,7 +208,7 @@ impl Permutation {
     pub fn apply_mut<T>(&self, data: &mut [T]) {
         assert_eq!(
             data.len(),
-            self.symbols(),
+            self.len(),
             "data length must match permutation length"
         );
         // Rotate each cycle by one via swaps down consecutive elements.
@@ -199,25 +230,14 @@ impl Permutation {
         self.0.iter().enumerate().all(|(i, &pi)| self.0[pi] == i)
     }
 
+    /// Returns `true` iff this permutation is the identity (`self[i] == i` for all `i`).
+    pub fn is_identity(&self) -> bool {
+        self.0.iter().enumerate().all(|(i, &pi)| i == pi)
+    }
+
     /// Consumes the permutation, returning the underlying map.
     pub fn into_vec(self) -> Vec<usize> {
         self.0
-    }
-
-    pub fn symbols(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl Index<usize> for Permutation {
-    type Output = usize;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
     }
 }
 
@@ -235,6 +255,12 @@ impl TryFrom<Vec<usize>> for Permutation {
     }
 }
 
+impl From<Permutation> for Vec<usize> {
+    fn from(permutation: Permutation) -> Vec<usize> {
+        permutation.0
+    }
+}
+
 impl std::fmt::Display for Permutation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[")?;
@@ -249,19 +275,14 @@ impl std::fmt::Display for Permutation {
 }
 
 /// A single cycle of a permutation: the elements it moves, in cyclic order.
+/// Always non-empty (a fixed point is a cycle of length 1). Derefs to `[usize]`,
+/// so `len()`, indexing, and other slice methods work directly.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Cycle {
     elements: Vec<usize>,
 }
 
 impl Cycle {
-    /// The number of elements the cycle moves. A cycle is never empty (a fixed
-    /// point is a cycle of length 1), so there is no `is_empty`.
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
-        self.elements.len()
-    }
-
     /// Consumes the cycle, returning its elements in cyclic order.
     pub fn into_vec(self) -> Vec<usize> {
         self.elements
@@ -397,38 +418,6 @@ pub fn shuffle<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
     }
 }
 
-/// Samples a uniformly random derangement of `{0, 1, ..., n-1}` using the given
-/// random number generator.
-///
-/// # Panics
-/// Panics if `n == 1`, since no derangement of a single element exists.
-pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
-    let mut permutation = (0..n).collect::<Vec<usize>>();
-    derange(&mut permutation, rng);
-    Permutation(permutation)
-}
-
-/// Samples a uniformly random derangement of `{0, 1, ..., n-1}`.
-///
-/// # Panics
-/// Panics if `n == 1`, since no derangement of a single element exists.
-pub fn sample_derangement(n: usize) -> Permutation {
-    sample_derangement_with(n, &mut rand::rng())
-}
-
-/// Samples a uniformly random permutation of `{0, 1, ..., n-1}` using the given
-/// random number generator, via a Fisher–Yates shuffle.
-pub fn sample_permutation_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
-    let mut permutation = (0..n).collect::<Vec<usize>>();
-    shuffle(&mut permutation, rng);
-    Permutation(permutation)
-}
-
-/// Samples a uniformly random permutation of `{0, 1, ..., n-1}`.
-pub fn sample_permutation(n: usize) -> Permutation {
-    sample_permutation_with(n, &mut rand::rng())
-}
-
 /// Returns `true` iff `p` is a permutation of `{0, 1, ..., p.len()-1}`, i.e. every
 /// index in that range appears exactly once.
 fn is_permutation(p: &[usize]) -> bool {
@@ -460,7 +449,7 @@ mod tests {
         let mut rng = rand::rng();
         for n in [2, 3, 4, 5, 8, 13, 21, 34, 50, 100] {
             for _ in 0..1000 {
-                let d = sample_derangement_with(n, &mut rng);
+                let d = Permutation::sample_derangement_with(n, &mut rng);
                 assert!(d.is_derangement(), "not a derangement for n = {n}: {d:?}");
             }
         }
@@ -468,7 +457,7 @@ mod tests {
 
     #[test]
     fn empty_input() {
-        assert!(sample_derangement_with(0, &mut rand::rng()).is_empty());
+        assert!(Permutation::sample_derangement_with(0, &mut rand::rng()).is_empty());
     }
 
     #[test]
@@ -477,8 +466,8 @@ mod tests {
         // Unlike derangements, permutations exist for n = 0 and n = 1.
         for n in [0, 1, 2, 3, 5, 8, 50, 100] {
             for _ in 0..500 {
-                let p = sample_permutation_with(n, &mut rng);
-                assert_eq!(p.symbols(), n);
+                let p = Permutation::sample_permutation_with(n, &mut rng);
+                assert_eq!(p.len(), n);
                 assert!(is_permutation(&p), "not a permutation for n = {n}: {p:?}");
             }
         }
@@ -491,7 +480,7 @@ mod tests {
         let mut counts: HashMap<Permutation, u32> = HashMap::new();
         let trials = 600_000;
         for _ in 0..trials {
-            *counts.entry(sample_permutation_with(3, &mut rng)).or_default() += 1;
+            *counts.entry(Permutation::sample_permutation_with(3, &mut rng)).or_default() += 1;
         }
 
         assert_eq!(counts.len(), 6, "expected all six permutations of 3 elements");
@@ -525,12 +514,12 @@ mod tests {
 
         // Deref: indexing and slice methods.
         assert_eq!(p[0], 1);
-        assert_eq!(p.symbols(), 3);
+        assert_eq!(p.len(), 3);
         assert!(p.is_derangement());
 
         // inverse ∘ p == identity.
         let inv = p.inverse();
-        for i in 0..p.symbols() {
+        for i in 0..p.len() {
             assert_eq!(inv[p[i]], i);
             assert_eq!(p[inv[i]], i);
         }
@@ -584,7 +573,7 @@ mod tests {
         assert_eq!(data, ['b', 'c', 'a', 'd', 'e']); // positions 0,1,2 rotated; 3,4 untouched
 
         // Cycles partition {0, ..., n-1} for a random permutation.
-        let p = sample_permutation_with(50, &mut rand::rng());
+        let p = Permutation::sample_permutation_with(50, &mut rand::rng());
         let mut all: Vec<usize> = p.cycles().into_iter().flatten().collect();
         all.sort_unstable();
         assert_eq!(all, (0..50).collect::<Vec<_>>());
@@ -611,12 +600,12 @@ mod tests {
 
         // (p ∘ q)[i] == p[q[i]]
         let pq = p.compose(&q);
-        for i in 0..p.symbols() {
+        for i in 0..p.len() {
             assert_eq!(pq[i], p[q[i]]);
         }
 
         // p ∘ p⁻¹ == p⁻¹ ∘ p == identity.
-        let id = Permutation::identity(p.symbols());
+        let id = Permutation::identity(p.len());
         assert_eq!(p.compose(&p.inverse()), id);
         assert_eq!(p.inverse().compose(&p), id);
 
@@ -646,7 +635,7 @@ mod tests {
     fn inverse_mut_matches_inverse() {
         let mut rng = rand::rng();
         for n in [0usize, 1, 2, 3, 5, 8, 30] {
-            let p = sample_permutation_with(n, &mut rng);
+            let p = Permutation::sample_permutation_with(n, &mut rng);
 
             let mut q = p.clone();
             q.inverse_mut();
@@ -693,7 +682,7 @@ mod tests {
     fn apply_mut_matches_apply() {
         let mut rng = rand::rng();
         for n in [2usize, 3, 5, 8, 50] {
-            let p = sample_derangement_with(n, &mut rng);
+            let p = Permutation::sample_derangement_with(n, &mut rng);
             let data: Vec<usize> = (0..n).map(|i| i * 10).collect();
 
             let out = p.apply(&data);
@@ -757,7 +746,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "no derangement exists for n = 1")]
     fn n1_panics() {
-        sample_derangement_with(1, &mut rand::rng());
+        Permutation::sample_derangement_with(1, &mut rand::rng());
     }
 
     /// For n = 3 there are exactly two derangements: [1,2,0] and [2,0,1].
@@ -768,7 +757,7 @@ mod tests {
         let mut counts: HashMap<Permutation, u32> = HashMap::new();
         let trials = 200_000;
         for _ in 0..trials {
-            *counts.entry(sample_derangement_with(3, &mut rng)).or_default() += 1;
+            *counts.entry(Permutation::sample_derangement_with(3, &mut rng)).or_default() += 1;
         }
 
         assert_eq!(counts.len(), 2, "expected exactly two derangements of 3 elements");
@@ -785,7 +774,7 @@ mod tests {
         let mut counts: HashMap<Permutation, u32> = HashMap::new();
         let trials = 900_000;
         for _ in 0..trials {
-            *counts.entry(sample_derangement_with(4, &mut rng)).or_default() += 1;
+            *counts.entry(Permutation::sample_derangement_with(4, &mut rng)).or_default() += 1;
         }
 
         assert_eq!(counts.len(), 9, "expected exactly nine derangements of 4 elements");

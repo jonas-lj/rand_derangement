@@ -7,7 +7,7 @@
 //! - [`Permutation`] is a validated wrapper offering [`apply`](Permutation::apply),
 //!   [`inverse`](Permutation::inverse), cycle-notation `Display`, and more.
 //!
-//! Permutations use a Fisher–Yates shuffle; derangements use a variant of the
+//! Permutations use a Fisher–Yates shuffle, and derangements use a variant of the
 //! Martínez–Panholzer–Prodinger algorithm (see [`derange`] for the reference).
 
 use std::iter::successors;
@@ -31,7 +31,7 @@ impl Permutation {
 
     /// Wraps `map` after checking it is a permutation of `{0, ..., map.len()-1}`.
     pub fn try_new(map: Vec<usize>) -> Result<Self, NotAPermutation> {
-        is_permutation(&map).then(|| Self(map)).ok_or(NotAPermutation)
+        is_permutation(&map).then_some(Self(map)).ok_or(NotAPermutation)
     }
 
     /// The inverse permutation, satisfying `self.inverse()[self[i]] == i`.
@@ -41,6 +41,31 @@ impl Permutation {
             inverse[pi] = i;
         }
         Permutation(inverse)
+    }
+
+    /// Iterates over the cycles of the permutation, each yielded as a `Vec<usize>`
+    /// beginning at its smallest element. Fixed points appear as singleton cycles,
+    /// so the cycles partition `{0, ..., n-1}` (matching the `Display` output).
+    pub fn cycles(&self) -> impl Iterator<Item = Vec<usize>> + '_ {
+        let mut seen = vec![false; self.0.len()];
+        let mut start = 0;
+        std::iter::from_fn(move || {
+            // Advance to the next element not yet part of a cycle.
+            while start < self.0.len() && seen[start] {
+                start += 1;
+            }
+            if start == self.0.len() {
+                return None;
+            }
+            let mut cycle = Vec::new();
+            let mut cur = start;
+            while !seen[cur] {
+                seen[cur] = true;
+                cycle.push(cur);
+                cur = self.0[cur];
+            }
+            Some(cycle)
+        })
     }
 
     /// Applies the permutation to `data`.
@@ -360,6 +385,33 @@ mod tests {
 
         // into_inner round-trips.
         assert_eq!(p.into_vec(), vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn cycles_decomposition() {
+        let collect = |p: &Permutation| p.cycles().collect::<Vec<_>>();
+
+        // one long cycle
+        assert_eq!(collect(&Permutation::try_new(vec![1, 2, 0]).unwrap()), vec![vec![0, 1, 2]]);
+        // two 2-cycles
+        assert_eq!(
+            collect(&Permutation::try_new(vec![1, 0, 3, 2]).unwrap()),
+            vec![vec![0, 1], vec![2, 3]]
+        );
+        // fixed point + 2-cycle
+        assert_eq!(
+            collect(&Permutation::try_new(vec![0, 2, 1]).unwrap()),
+            vec![vec![0], vec![1, 2]]
+        );
+        // identity => all singletons; empty => no cycles
+        assert_eq!(collect(&Permutation::identity(3)), vec![vec![0], vec![1], vec![2]]);
+        assert_eq!(Permutation::identity(0).cycles().count(), 0);
+
+        // Cycles partition {0, ..., n-1} for a random permutation.
+        let p = sample_permutation_with(50, &mut rand::rng());
+        let mut all: Vec<usize> = p.cycles().flatten().collect();
+        all.sort_unstable();
+        assert_eq!(all, (0..50).collect::<Vec<_>>());
     }
 
     #[test]

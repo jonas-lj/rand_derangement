@@ -43,9 +43,7 @@ impl Permutation {
         Permutation(inverse)
     }
 
-    /// The composition `self ∘ other`: the permutation mapping `i` to
-    /// `self[other[i]]` (apply `other` first, then `self`). Composing with
-    /// [`inverse`](Permutation::inverse) yields the identity.
+    /// The composition `self ∘ other`.
     ///
     /// # Panics
     /// Panics if `self.len() != other.len()`.
@@ -106,24 +104,11 @@ impl Permutation {
             self.len(),
             "data length must match permutation length"
         );
-        let n = self.len();
-        let mut seen = vec![false; n];
-        for start in 0..n {
-            if seen[start] {
-                continue;
-            }
-            // Rotate the cycle through `start` by one, so each position ends up
-            // with the value of its successor `self[cur]`.
-            let mut cur = start;
-            seen[cur] = true;
-            loop {
-                let next = self.0[cur];
-                if next == start {
-                    break;
-                }
-                data.swap(cur, next);
-                seen[next] = true;
-                cur = next;
+        // Rotate each cycle by one so every position ends up with the value of its
+        // successor: swapping down consecutive pairs realizes that rotation.
+        for cycle in self.cycles() {
+            for pair in cycle.windows(2) {
+                data.swap(pair[0], pair[1]);
             }
         }
     }

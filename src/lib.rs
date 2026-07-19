@@ -125,6 +125,12 @@ impl Permutation {
         is_derangement(&self.0)
     }
 
+    /// Returns `true` iff this permutation is an involution: its own inverse
+    /// (`self[self[i]] == i` for all `i`, equivalently every cycle has length ≤ 2).
+    pub fn is_involution(&self) -> bool {
+        self.0.iter().enumerate().all(|(i, &pi)| self.0[pi] == i)
+    }
+
     /// Consumes the permutation, returning the underlying map.
     pub fn into_vec(self) -> Vec<usize> {
         self.0
@@ -561,6 +567,24 @@ mod tests {
 
         assert_eq!(Parity::Even.sign(), 1);
         assert_eq!(Parity::Odd.sign(), -1);
+    }
+
+    #[test]
+    fn is_involution_detects_self_inverse() {
+        let involution = |v: Vec<usize>| Permutation::try_new(v).unwrap().is_involution();
+
+        assert!(Permutation::identity(4).is_involution());
+        assert!(involution(vec![1, 0, 2])); // single transposition
+        assert!(involution(vec![1, 0, 3, 2])); // two transpositions
+        assert!(!involution(vec![1, 2, 0])); // 3-cycle
+        assert!(Permutation::identity(0).is_involution()); // empty, vacuously
+
+        // Equivalent to `p == p⁻¹`.
+        let mut rng = rand::rng();
+        for _ in 0..200 {
+            let p = sample_permutation_with(8, &mut rng);
+            assert_eq!(p.is_involution(), p == p.inverse());
+        }
     }
 
     #[test]

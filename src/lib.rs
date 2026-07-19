@@ -204,7 +204,7 @@ impl Permutation {
 
     /// Returns `true` iff this permutation has no fixed point (`self[i] != i`).
     pub fn is_derangement(&self) -> bool {
-        is_derangement(&self.0)
+        self.0.iter().enumerate().all(|(i, &pi)| i != pi)
     }
 
     /// Returns `true` iff this permutation is an involution: its own inverse
@@ -390,12 +390,6 @@ pub fn shuffle<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
 fn is_permutation(p: &[usize]) -> bool {
     let mut seen = vec![false; p.len()];
     p.iter().all(|&x| x < p.len() && !std::mem::replace(&mut seen[x], true))
-}
-
-/// Returns `true` iff `p` is a derangement: a permutation of
-/// `{0, 1, ..., p.len()-1}` with no fixed point (`p[i] != i` for all `i`).
-fn is_derangement(p: &[usize]) -> bool {
-    is_permutation(p) && p.iter().enumerate().all(|(i, &pi)| i != pi)
 }
 
 /// Greatest common divisor, via the Euclidean algorithm.
@@ -663,11 +657,12 @@ mod tests {
         assert!(is_permutation(&[2, 0, 1]));
         assert!(!is_permutation(&[0, 0, 1])); // repeat
         assert!(!is_permutation(&[0, 1, 3])); // out of range
+        assert!(is_permutation(&[])); // empty is vacuously a permutation
 
-        assert!(is_derangement(&[1, 2, 0]));
-        assert!(!is_derangement(&[0, 2, 1])); // fixed point at 0
-        assert!(!is_derangement(&[1, 1, 0])); // not a permutation
-        assert!(is_derangement(&[]) && is_permutation(&[])); // vacuously true
+        let is_derangement = |v: Vec<usize>| Permutation::try_new(v).unwrap().is_derangement();
+        assert!(is_derangement(vec![1, 2, 0]));
+        assert!(!is_derangement(vec![0, 2, 1])); // fixed point at 0
+        assert!(is_derangement(vec![])); // empty is vacuously a derangement
     }
 
     #[test]

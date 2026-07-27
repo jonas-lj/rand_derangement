@@ -238,7 +238,7 @@ impl Permutation {
         self.0.iter().enumerate().all(|(i, &pi)| i != pi)
     }
 
-    /// Returns `true` iff this permutation is an involution: its own inverse
+    /// Returns `true` iff this permutation is an involution, its own inverse
     /// (`self[self[i]] == i` for all `i`, equivalently every cycle has length ≤ 2).
     pub fn is_involution(&self) -> bool {
         self.0.iter().enumerate().all(|(i, &pi)| self.0[pi] == i)

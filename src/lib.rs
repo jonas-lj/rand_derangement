@@ -43,6 +43,7 @@ pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
     let two_cycle_prob = two_cycle_probabilities().take(n).collect::<Vec<f64>>();
     let mut unmarked = (0..n).collect::<Vec<usize>>();
 
+    // See https://www.jonaslindstrom.dk/?p=1328 for an explanation of this variant of the algorithm.
     while unmarked.len() > 1 {
         let i = unmarked.pop().unwrap();
         let j = rng.random_range(..unmarked.len());
@@ -170,7 +171,7 @@ impl Permutation {
     pub fn parity(&self) -> Parity {
         let mut cycle_count = 0;
         walk_cycles!(self, cycle => cycle_count += 1);
-        // Even iff the number of transpositions (n - #cycles) has a zero low bit.
+        // Even iff the number of transpositions (n - #cycles) is even.
         if (self.len() - cycle_count) & 1 == 0 {
             Parity::Even
         } else {
@@ -178,9 +179,9 @@ impl Permutation {
         }
     }
 
-    /// The order of the permutation: the least `k >= 1` such that applying it `k`
+    /// The order of the permutation: the smallest `k >= 1` such that applying it `k`
     /// times gives the identity. It equals the least common multiple of the cycle
-    /// lengths; the identity and the empty permutation have order 1.
+    /// lengths. The identity and the empty permutation have order 1.
     ///
     /// # Errors
     /// Returns [`OrderOverflow`] if the order does not fit in a `usize`.
@@ -225,7 +226,6 @@ impl Permutation {
             self.len(),
             "data length must match permutation length"
         );
-        // Rotate each cycle by one via swaps down consecutive elements.
         walk_cycles!(self, cycle => {
             for pair in cycle.windows(2) {
                 data.swap(pair[0], pair[1]);

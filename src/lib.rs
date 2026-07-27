@@ -38,7 +38,7 @@ pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
     if n == 0 {
         return;
     }
-    assert!(n != 1, "no derangement exists for n = 1");
+    assert_ne!(n, 1, "no derangement exists for n = 1");
 
     let two_cycle_prob = two_cycle_probabilities().take(n).collect::<Vec<f64>>();
     let mut unmarked = (0..n).collect::<Vec<usize>>();
@@ -57,7 +57,7 @@ pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
 /// to the cycle's elements (in cyclic order, starting at the smallest) and runs
 /// `$body`. The body may read `$cycle` freely, and — since a cycle's positions are
 /// disjoint from every later cycle — may also rewrite `$perm.0` at those positions
-/// in place without disturbing the remaining discovery. It must not `return`, as
+/// in place without disturbing the remaining discovery. It must NOT `return`, as
 /// the body is inlined into the walk loop, not a closure.
 macro_rules! walk_cycles {
     ($perm:expr, $cycle:ident => $body:expr) => {{
@@ -133,9 +133,6 @@ impl Permutation {
     /// Inverts the permutation in place, leaving `self` equal to what
     /// [`inverse`](Permutation::inverse) would return, without allocating a new map.
     pub fn inverse_mut(&mut self) {
-        // Reverse each cycle: every element is repointed to its predecessor. Sound
-        // in place because a cycle's positions are disjoint from every later cycle,
-        // so rewriting them cannot disturb the remaining discovery.
         walk_cycles!(self, cycle => {
             let last = cycle[cycle.len() - 1];
             for pair in cycle.windows(2) {

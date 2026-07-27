@@ -4,7 +4,7 @@
 //! We sample many random permutations, count how many have no fixed point, and
 //! compare the fraction against `1/e`.
 //!
-//! Run with: `cargo run --release --example one_over_e`
+//! Run with: `cargo run --release --example derangement_ratio`
 
 use rand_derangement::Permutation;
 

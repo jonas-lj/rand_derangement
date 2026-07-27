@@ -5,7 +5,7 @@
 //!   draw a uniformly random permutation / derangement.
 //! - [`shuffle`] / [`derange`] do the same in place on an arbitrary slice.
 //! - [`Permutation`] is a validated wrapper offering [`apply`](Permutation::apply),
-//!   [`inverse`](Permutation::inverse), cycle-notation `Display`, and more.
+//!   [`inverse`](Permutation::inverse), [`cycles`](Permutation::cycles), and more.
 //!
 //! Permutations use a Fisher–Yates shuffle, and derangements use a variant of the
 //! Martínez–Panholzer–Prodinger algorithm (see [`derange`] for the reference).
@@ -269,12 +269,6 @@ impl TryFrom<Vec<usize>> for Permutation {
     }
 }
 
-impl std::fmt::Display for Permutation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fmt_delimited(f, '[', &self.0, ']')
-    }
-}
-
 /// Lazy iterator over the cycles of a permutation, returned by
 /// [`Permutation::cycles`]. Borrows the permutation's map; each [`Cycle`] is built
 /// on demand as the iterator is advanced.
@@ -321,13 +315,6 @@ impl IntoIterator for Cycle {
     type IntoIter = std::vec::IntoIter<usize>;
     fn into_iter(self) -> Self::IntoIter {
         self.elements.into_iter()
-    }
-}
-
-/// Formats the cycle in cycle notation, e.g. `(0 2 1)`.
-impl std::fmt::Display for Cycle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fmt_delimited(f, '(', &self.elements, ')')
     }
 }
 
@@ -402,24 +389,6 @@ fn is_permutation(p: &[usize]) -> bool {
     let mut seen = vec![false; p.len()];
     p.iter()
         .all(|&x| x < p.len() && !std::mem::replace(&mut seen[x], true))
-}
-
-/// Writes `elements` space-separated between `open` and `close`, e.g. `[1 2 0]`.
-/// Shared by the `Display` impls of [`Permutation`] and [`Cycle`].
-fn fmt_delimited(
-    f: &mut std::fmt::Formatter<'_>,
-    open: char,
-    elements: &[usize],
-    close: char,
-) -> std::fmt::Result {
-    write!(f, "{open}")?;
-    for (i, x) in elements.iter().enumerate() {
-        if i > 0 {
-            write!(f, " ")?;
-        }
-        write!(f, "{x}")?;
-    }
-    write!(f, "{close}")
 }
 
 /// Greatest common divisor, via the Euclidean algorithm.
@@ -533,13 +502,7 @@ mod tests {
         let data = ['a', 'b', 'c'];
         assert_eq!(p.apply(&data), vec!['b', 'c', 'a']);
 
-        // Display in one-line notation (the images in order).
-        assert_eq!(p.to_string(), "[1 2 0]");
-        let q = Permutation::try_new(vec![1, 0, 3, 2]).unwrap();
-        assert_eq!(q.to_string(), "[1 0 3 2]");
-        assert_eq!(Permutation::identity(3).to_string(), "[0 1 2]");
-
-        // into_inner round-trips.
+        // into_vec round-trips.
         assert_eq!(p.into_vec(), vec![1, 2, 0]);
     }
 
@@ -570,14 +533,14 @@ mod tests {
         );
         assert_eq!(Permutation::identity(0).cycles().count(), 0);
 
-        // Cycle Display uses cycle notation; Deref gives slice access.
+        // A cycle Derefs to its elements as a slice.
         let c = Permutation::try_new(vec![1, 2, 0])
             .unwrap()
             .cycles()
             .next()
             .unwrap();
-        assert_eq!(c.to_string(), "(0 1 2)");
         assert_eq!(c.len(), 3);
+        assert_eq!(c.into_vec(), vec![0, 1, 2]);
 
         // Cycles partition {0, ..., n-1} for a random permutation.
         let p = Permutation::sample_permutation_with(50, &mut rand::rng());

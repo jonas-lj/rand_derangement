@@ -269,22 +269,9 @@ impl TryFrom<Vec<usize>> for Permutation {
     }
 }
 
-impl From<Permutation> for Vec<usize> {
-    fn from(permutation: Permutation) -> Vec<usize> {
-        permutation.0
-    }
-}
-
 impl std::fmt::Display for Permutation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[")?;
-        for (i, x) in self.0.iter().enumerate() {
-            if i > 0 {
-                write!(f, " ")?;
-            }
-            write!(f, "{x}")?;
-        }
-        write!(f, "]")
+        fmt_delimited(f, '[', &self.0, ']')
     }
 }
 
@@ -340,14 +327,7 @@ impl IntoIterator for Cycle {
 /// Formats the cycle in cycle notation, e.g. `(0 2 1)`.
 impl std::fmt::Display for Cycle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(")?;
-        for (i, x) in self.elements.iter().enumerate() {
-            if i > 0 {
-                write!(f, " ")?;
-            }
-            write!(f, "{x}")?;
-        }
-        write!(f, ")")
+        fmt_delimited(f, '(', &self.elements, ')')
     }
 }
 
@@ -422,6 +402,24 @@ fn is_permutation(p: &[usize]) -> bool {
     let mut seen = vec![false; p.len()];
     p.iter()
         .all(|&x| x < p.len() && !std::mem::replace(&mut seen[x], true))
+}
+
+/// Writes `elements` space-separated between `open` and `close`, e.g. `[1 2 0]`.
+/// Shared by the `Display` impls of [`Permutation`] and [`Cycle`].
+fn fmt_delimited(
+    f: &mut std::fmt::Formatter<'_>,
+    open: char,
+    elements: &[usize],
+    close: char,
+) -> std::fmt::Result {
+    write!(f, "{open}")?;
+    for (i, x) in elements.iter().enumerate() {
+        if i > 0 {
+            write!(f, " ")?;
+        }
+        write!(f, "{x}")?;
+    }
+    write!(f, "{close}")
 }
 
 /// Greatest common divisor, via the Euclidean algorithm.

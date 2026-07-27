@@ -63,6 +63,7 @@ All samplers have an `_with(…, rng)` variant that takes an explicit RNG.
 cargo test                              # correctness + uniformity checks
 cargo bench                             # criterion sampling benchmark
 cargo run --release --example golomb_dickman   # estimates the Golomb–Dickman constant
+cargo run --release --example one_over_e       # fraction of permutations that are derangements -> 1/e
 ```
 
 ## License

@@ -11,7 +11,7 @@
 //!
 //! Run with: `cargo run --release --example derangement_ratio`
 
-use rand_derangement::Permutation;
+use rand_derangement::permutation::Permutation;
 
 fn main() {
     let n = 10usize;

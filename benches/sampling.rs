@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
-use rand_derangement::Permutation;
+use rand_derangement::permutation::Permutation;
 
 fn bench_sampling(c: &mut Criterion) {
     let mut group = c.benchmark_group("sample_derangement");

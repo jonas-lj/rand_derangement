@@ -6,7 +6,7 @@
 //!
 //! Run with: `cargo run --release --example golomb_dickman`
 
-use rand_derangement::Permutation;
+use rand_derangement::permutation::Permutation;
 
 fn main() {
     let n = 1_000usize;

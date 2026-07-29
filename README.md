@@ -1,18 +1,21 @@
 # rand_derangement
 
-Fast, **uniformly** random derangements and permutations of `{0, 1, …, n-1}`,
-plus a small `Permutation` type with the usual operations.
+Uniform random sampling of combinatorial structures over `{0, 1, …, n-1}`:
+
+- **`permutation`** — random permutations and derangements, plus a `Permutation`
+  type with the usual operations (inverse, composition, cycles, parity, order).
+- **`partition`** — uniform random *set* partitions (Stam's urn algorithm).
 
 A *derangement* is a permutation with no fixed points. Unlike some existing
-crates, the sampler here is provably uniform and runs in `O(n)` time with no
-big-integer arithmetic and no overflow ceiling on `n`.
+crates, the derangement sampler here is provably uniform and runs in `O(n)` time
+with no big-integer arithmetic and no overflow ceiling on `n`.
 
 ## Usage
 
 Sample a random derangement or permutation:
 
 ```rust
-use rand_derangement::Permutation;
+use rand_derangement::permutation::Permutation;
 
 let d = Permutation::sample_derangement(10);
 assert!(d.is_derangement());
@@ -24,7 +27,7 @@ let p = Permutation::sample_permutation(10);
 indexing work directly, and it offers the usual group operations:
 
 ```rust
-use rand_derangement::{Parity, Permutation};
+use rand_derangement::permutation::{Parity, Permutation};
 
 let p = Permutation::try_new(vec![1, 2, 0, 3]).unwrap();
 
@@ -44,7 +47,7 @@ Derange or shuffle an arbitrary slice in place (no `Permutation` produced, no
 `Clone` bound):
 
 ```rust
-use rand_derangement::{derange, shuffle};
+use rand_derangement::permutation::{derange, shuffle};
 
 let mut rng = rand::rng();
 let mut data = ['a', 'b', 'c', 'd', 'e'];
@@ -54,6 +57,16 @@ derange(&mut data, &mut rng);   // no element stays where it was
 ```
 
 All samplers have an `_with(…, rng)` variant that takes an explicit RNG.
+
+Sample a uniform random set partition (one of the `Bₙ` ways to split the set into
+non-empty blocks):
+
+```rust
+use rand_derangement::partition::Partition;
+
+let p = Partition::sample(5);
+println!("{} blocks: {:?}", p.num_blocks(), p.blocks());
+```
 
 ## Development
 

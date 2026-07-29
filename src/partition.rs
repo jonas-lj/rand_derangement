@@ -96,6 +96,30 @@ impl<R: RngExt + ?Sized> Iterator for Partition<'_, R> {
 impl<R: RngExt + ?Sized> ExactSizeIterator for Partition<'_, R> {}
 impl<R: RngExt + ?Sized> FusedIterator for Partition<'_, R> {}
 
+/// Randomly partitions `elements` into non-empty blocks, uniformly over all set
+/// partitions, consuming the input. Each element keeps its position within its
+/// block; an empty input yields no blocks.
+pub fn sample_from<T>(elements: Vec<T>) -> Vec<Vec<T>> {
+    sample_from_with(elements, &mut rand::rng())
+}
+
+/// Randomly partitions `elements` into non-empty blocks, uniformly over all set
+/// partitions, using the given random number generator and consuming the input.
+/// Each element keeps its position within its block; an empty input yields no blocks.
+pub fn sample_from_with<T, R: RngExt + ?Sized>(elements: Vec<T>, rng: &mut R) -> Vec<Vec<T>> {
+    let n = elements.len();
+    let mut blocks: Vec<Vec<T>> = Vec::new();
+    for (element, block) in elements.into_iter().zip(Partition::sample_with(n, rng)) {
+        // Block indices arrive in restricted-growth order, so a new block is always
+        // exactly `blocks.len()`.
+        if block == blocks.len() {
+            blocks.push(Vec::new());
+        }
+        blocks[block].push(element);
+    }
+    blocks
+}
+
 /// Samples the number of colors `k >= 1` with probability proportional to
 /// `k^n / k!` (Stam's distribution). Works in log-space and stops once the weight
 /// has fallen negligibly below the peak, so the truncated tail is far below the
@@ -207,6 +231,27 @@ mod tests {
         let mut all: Vec<i32> = buckets.into_iter().flatten().collect();
         all.sort_unstable();
         assert_eq!(all, items);
+    }
+
+    #[test]
+    fn sample_from_groups_all() {
+        let mut rng = rand::rng();
+        for n in [0usize, 1, 2, 5, 12] {
+            let elements: Vec<usize> = (0..n).map(|i| i * 10).collect();
+            let blocks = sample_from_with(elements.clone(), &mut rng);
+
+            // Non-empty blocks; there are blocks iff there are elements.
+            assert!(
+                blocks.iter().all(|b| !b.is_empty()),
+                "empty block for n = {n}"
+            );
+            assert_eq!(blocks.is_empty(), n == 0);
+
+            // Every element appears exactly once, across all blocks.
+            let mut all: Vec<usize> = blocks.into_iter().flatten().collect();
+            all.sort_unstable();
+            assert_eq!(all, elements);
+        }
     }
 
     /// The 5 partitions of a 3-element set (`B_3 = 5`) should be equiprobable.

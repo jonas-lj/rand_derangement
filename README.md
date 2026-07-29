@@ -62,15 +62,21 @@ Sample a uniform random set partition (one of the `Bₙ` ways to split the set i
 non-empty blocks):
 
 ```rust
-use rand_combinatorics::partition::{partition_elements, Partition};
+use rand_combinatorics::partition::Partition;
 
-// group a set of values into random blocks
-let blocks = partition_elements(vec![10, 20, 30, 40, 50], &mut rand::rng());
+let items = vec![10, 20, 30, 40, 50];
+let p = Partition::sample(items.len());
 
-// or sample the abstract partition of {0, ..., 4}
-let p = Partition::sample(5);
-println!("{} blocks: {:?}", p.num_blocks(), p.blocks());
+// `p` knows the block count up front and, when iterated, yields the block index of
+// each element in order — so you can scatter into pre-made buckets lazily, without
+// materializing the grouped blocks first (nice for large sets).
+let mut buckets: Vec<Vec<i32>> = vec![Vec::new(); p.num_blocks()];
+for (item, block) in items.into_iter().zip(&p) {
+    buckets[block].push(item);
+}
 ```
+
+For a one-shot grouped result there's also `partition_elements(values, rng) -> Vec<Vec<T>>`.
 
 ## Development
 

@@ -93,6 +93,26 @@ impl Partition {
     }
 }
 
+/// Iterating a `Partition` yields the block index of each element `0, 1, ..., n-1`
+/// in order (its [`assignment`](Partition::assignment)). Together with
+/// [`num_blocks`](Partition::num_blocks) — known up front — this lets you scatter a
+/// set into pre-created buckets without ever materializing the blocks.
+impl IntoIterator for Partition {
+    type Item = usize;
+    type IntoIter = std::vec::IntoIter<usize>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.block.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Partition {
+    type Item = usize;
+    type IntoIter = std::iter::Copied<std::slice::Iter<'a, usize>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.block.iter().copied()
+    }
+}
+
 /// Randomly partitions `elements` into non-empty blocks, uniformly over all set
 /// partitions of them, consuming the input.
 ///
@@ -219,6 +239,29 @@ mod tests {
             let mut all: Vec<usize> = blocks.into_iter().flatten().collect();
             all.sort_unstable();
             assert_eq!(all, elements);
+        }
+    }
+
+    #[test]
+    fn partition_iterates_block_indices() {
+        let mut rng = rand::rng();
+        for n in [0usize, 1, 4, 20] {
+            let p = Partition::sample_with(n, &mut rng);
+
+            // By-ref iteration yields the assignment and leaves `p` usable.
+            let via_iter: Vec<usize> = (&p).into_iter().collect();
+            assert_eq!(via_iter, p.assignment());
+
+            // Scatter element indices into `num_blocks` pre-created buckets;
+            // this reproduces `blocks()`.
+            let mut buckets = vec![Vec::new(); p.num_blocks()];
+            for (element, block) in (0..n).zip(&p) {
+                buckets[block].push(element);
+            }
+            assert_eq!(buckets, p.blocks());
+
+            // By-value iteration consumes and yields the same sequence.
+            assert_eq!(p.into_iter().collect::<Vec<_>>(), via_iter);
         }
     }
 

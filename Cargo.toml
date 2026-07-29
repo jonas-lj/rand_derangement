@@ -1,12 +1,12 @@
 [package]
-name = "rand_derangement"
+name = "rand_combinatorics"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-description = "Fast, uniformly random sampling of derangements (permutations with no fixed points)."
+description = "Uniform random sampling of combinatorial structures: permutations, derangements, and set partitions."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/jonas-lj/rand_derangement"
-keywords = ["derangement", "permutation", "random", "sampling", "combinatorics"]
+repository = "https://github.com/jonas-lj/rand_combinatorics"
+keywords = ["combinatorics", "permutation", "partition", "random", "sampling"]
 categories = ["algorithms", "mathematics"]
 
 [dependencies]

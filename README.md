@@ -1,4 +1,4 @@
-# rand_derangement
+# rand_combinatorics
 
 Uniform random sampling of combinatorial structures over `{0, 1, …, n-1}`:
 
@@ -15,7 +15,7 @@ with no big-integer arithmetic and no overflow ceiling on `n`.
 Sample a random derangement or permutation:
 
 ```rust
-use rand_derangement::permutation::Permutation;
+use rand_combinatorics::permutation::Permutation;
 
 let d = Permutation::sample_derangement(10);
 assert!(d.is_derangement());
@@ -27,7 +27,7 @@ let p = Permutation::sample_permutation(10);
 indexing work directly, and it offers the usual group operations:
 
 ```rust
-use rand_derangement::permutation::{Parity, Permutation};
+use rand_combinatorics::permutation::{Parity, Permutation};
 
 let p = Permutation::try_new(vec![1, 2, 0, 3]).unwrap();
 
@@ -47,7 +47,7 @@ Derange or shuffle an arbitrary slice in place (no `Permutation` produced, no
 `Clone` bound):
 
 ```rust
-use rand_derangement::permutation::{derange, shuffle};
+use rand_combinatorics::permutation::{derange, shuffle};
 
 let mut rng = rand::rng();
 let mut data = ['a', 'b', 'c', 'd', 'e'];
@@ -62,7 +62,7 @@ Sample a uniform random set partition (one of the `Bₙ` ways to split the set i
 non-empty blocks):
 
 ```rust
-use rand_derangement::partition::Partition;
+use rand_combinatorics::partition::Partition;
 
 let p = Partition::sample(5);
 println!("{} blocks: {:?}", p.num_blocks(), p.blocks());

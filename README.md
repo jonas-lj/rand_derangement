@@ -76,8 +76,6 @@ for (item, block) in items.into_iter().zip(&p) {
 }
 ```
 
-For a one-shot grouped result there's also `partition_elements(values, rng) -> Vec<Vec<T>>`.
-
 ## Development
 
 ```

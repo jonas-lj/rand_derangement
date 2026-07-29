@@ -99,14 +99,14 @@ impl<R: RngExt + ?Sized> FusedIterator for Partition<'_, R> {}
 /// Randomly partitions `elements` into non-empty blocks, uniformly over all set
 /// partitions, consuming the input. Each element keeps its position within its
 /// block; an empty input yields no blocks.
-pub fn sample_from<T>(elements: Vec<T>) -> Vec<Vec<T>> {
-    sample_from_with(elements, &mut rand::rng())
+pub fn partition<T>(elements: Vec<T>) -> Vec<Vec<T>> {
+    partition_with(elements, &mut rand::rng())
 }
 
 /// Randomly partitions `elements` into non-empty blocks, uniformly over all set
 /// partitions, using the given random number generator and consuming the input.
 /// Each element keeps its position within its block; an empty input yields no blocks.
-pub fn sample_from_with<T, R: RngExt + ?Sized>(elements: Vec<T>, rng: &mut R) -> Vec<Vec<T>> {
+pub fn partition_with<T, R: RngExt + ?Sized>(elements: Vec<T>, rng: &mut R) -> Vec<Vec<T>> {
     let n = elements.len();
     let mut blocks: Vec<Vec<T>> = Vec::new();
     for (element, block) in elements.into_iter().zip(Partition::sample_with(n, rng)) {
@@ -234,11 +234,11 @@ mod tests {
     }
 
     #[test]
-    fn sample_from_groups_all() {
+    fn partition_groups_all() {
         let mut rng = rand::rng();
         for n in [0usize, 1, 2, 5, 12] {
             let elements: Vec<usize> = (0..n).map(|i| i * 10).collect();
-            let blocks = sample_from_with(elements.clone(), &mut rng);
+            let blocks = partition_with(elements.clone(), &mut rng);
 
             // Non-empty blocks; there are blocks iff there are elements.
             assert!(

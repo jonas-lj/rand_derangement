@@ -66,7 +66,7 @@ non-empty blocks):
 use rand_combinatorics::partition;
 
 // Group a `Vec` into random non-empty blocks (elements keep their order within a block):
-let blocks: Vec<Vec<i32>> = partition::sample_from(vec![10, 20, 30, 40, 50]);
+let blocks: Vec<Vec<i32>> = partition::partition(vec![10, 20, 30, 40, 50]);
 ```
 
 For large sets you can avoid materializing the blocks: `Partition` is a lazy

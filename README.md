@@ -5,6 +5,7 @@ Uniform random sampling of combinatorial structures over `{0, 1, …, n-1}`:
 - **`permutation`** — random permutations and derangements, plus a `Permutation`
   type with the usual operations (inverse, composition, cycles, parity, order).
 - **`partition`** — uniform random *set* partitions (Stam's urn algorithm).
+- **`subset`** — uniform random `k`-subsets / combinations (Floyd's algorithm).
 
 A *derangement* is a permutation with no fixed points. Unlike some existing
 crates, the derangement sampler here is provably uniform and runs in `O(n)` time
@@ -77,6 +78,15 @@ for (item, block) in items.into_iter().zip(Partition::sample_with(5, &mut rng)) 
     }
     buckets[block].push(item);
 }
+```
+
+Sample a uniform random `k`-subset (combination), returned in ascending order:
+
+```rust
+use rand_combinatorics::subset;
+
+let picks = subset::sample(52, 5); // 5 distinct indices from {0, ..., 51}
+assert_eq!(picks.len(), 5);
 ```
 
 ## Development

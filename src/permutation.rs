@@ -1,14 +1,16 @@
-//! Random permutations and derangements of `{0, 1, ..., n-1}`
-//! (a *derangement* is a permutation with no fixed points).
+//! Random permutations, derangements, and involutions of `{0, 1, ..., n-1}`
+//! (a *derangement* has no fixed points; an *involution* is its own inverse).
 //!
-//! - [`Permutation::sample_permutation`] / [`Permutation::sample_derangement`]
-//!   draw a uniformly random permutation / derangement.
-//! - [`shuffle`] / [`derange`] do the same in place on an arbitrary slice.
+//! - [`Permutation::sample_permutation`] / [`Permutation::sample_derangement`] /
+//!   [`Permutation::sample_involution`] draw a uniformly random permutation,
+//!   derangement, or involution.
+//! - [`shuffle`] / [`derange`] / [`involute`] do the same in place on an arbitrary slice.
 //! - [`Permutation`] is a validated wrapper offering [`apply`](Permutation::apply),
 //!   [`inverse`](Permutation::inverse), [`cycles`](Permutation::cycles), and more.
 //!
-//! Permutations use a Fisher–Yates shuffle, and derangements use a variant of the
-//! Martínez–Panholzer–Prodinger algorithm (see [`derange`] for the reference).
+//! Permutations use a Fisher–Yates shuffle; derangements use a variant of the
+//! Martínez–Panholzer–Prodinger algorithm (see [`derange`] for the reference); and
+//! involutions use the analogous recursive scheme (see [`involute`]).
 
 use rand::RngExt;
 use std::iter::successors;
@@ -49,6 +51,36 @@ pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
         let j = rng.random_range(..unmarked.len());
         data.swap(i, unmarked[j]);
         if rng.random_bool(two_cycle_prob[unmarked.len()]) {
+            unmarked.swap_remove(j);
+        }
+    }
+}
+
+/// Rearranges `data` in place by a uniformly random *involution* of its positions,
+/// so the rearrangement is its own inverse: every element is either left in place or
+/// swapped with exactly one other.
+///
+/// Like [`derange`], elements are placed one at a time from the back. The current
+/// element becomes a fixed point with probability `I(m-1) / I(m)` — where `I(m)` is
+/// the number of involutions of `m` elements (the *telephone numbers*, satisfying
+/// `I(m) = I(m-1) + (m-1)·I(m-2)`) — otherwise it joins a 2-cycle with a uniformly
+/// random one of the remaining elements. These fixed-point probabilities follow the
+/// stable recursion `f(m) = 1 / (1 + (m-1)·f(m-1))`, so no big-integer arithmetic or
+/// division of large involution numbers is needed.
+pub fn involute<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
+    let n = data.len();
+    let fixed_point_prob = fixed_point_probabilities()
+        .take(n + 1)
+        .collect::<Vec<f64>>();
+    let mut unmarked = (0..n).collect::<Vec<usize>>();
+
+    while let Some(i) = unmarked.pop() {
+        // `unmarked.len() + 1` elements remain (including `i`). With the complementary
+        // probability, pair `i` with a uniformly random one of the others as a 2-cycle.
+        // When `i` is the last element, `fixed_point_prob[1] == 1`, so it stays put.
+        if !rng.random_bool(fixed_point_prob[unmarked.len() + 1]) {
+            let j = rng.random_range(..unmarked.len());
+            data.swap(i, unmarked[j]);
             unmarked.swap_remove(j);
         }
     }
@@ -119,6 +151,20 @@ impl Permutation {
     pub fn sample_derangement_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
         let mut permutation = (0..n).collect::<Vec<usize>>();
         derange(&mut permutation, rng);
+        Permutation(permutation)
+    }
+
+    /// Samples a uniformly random involution of `{0, 1, ..., n-1}`: a permutation
+    /// equal to its own inverse (only fixed points and 2-cycles).
+    pub fn sample_involution(n: usize) -> Permutation {
+        Self::sample_involution_with(n, &mut rand::rng())
+    }
+
+    /// Samples a uniformly random involution of `{0, 1, ..., n-1}` using the given
+    /// random number generator.
+    pub fn sample_involution_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
+        let mut permutation = (0..n).collect::<Vec<usize>>();
+        involute(&mut permutation, rng);
         Permutation(permutation)
     }
 
@@ -378,6 +424,20 @@ fn two_cycle_probabilities() -> impl Iterator<Item = f64> {
     successors(Some((0usize, 0.0f64)), |&(mut u, prev)| {
         u += 1;
         Some((u, (1.0 - prev) / (u as f64 - prev)))
+    })
+    .map(|(_, p)| p)
+}
+
+/// Infinite iterator over the fixed-point probabilities `fixed_point(m)` for
+/// `m = 0, 1, 2, ...`, where `fixed_point(m) = I[m-1] / I[m]` is the probability that,
+/// with `m` elements left to place, the current one is a fixed point rather than
+/// paired into a 2-cycle (`I[m]` = the number of involutions of `m` elements). The
+/// stable upward recursion `fixed_point(m) = 1 / (1 + (m-1)·fixed_point(m-1))` follows
+/// from the recurrence `I[m] = I[m-1] + (m-1)·I[m-2]`.
+fn fixed_point_probabilities() -> impl Iterator<Item = f64> {
+    successors(Some((0usize, 1.0f64)), |&(mut m, prev)| {
+        m += 1;
+        Some((m, 1.0 / (1.0 + (m - 1) as f64 * prev)))
     })
     .map(|(_, p)| p)
 }
@@ -741,6 +801,75 @@ mod tests {
             assert!(
                 (freq - 0.5).abs() < 0.02,
                 "derangement {d:?} had frequency {freq}"
+            );
+        }
+    }
+
+    #[test]
+    fn samples_are_valid_involutions() {
+        let mut rng = rand::rng();
+        // Involutions exist for every n (the identity is one), including 0 and 1.
+        for n in [0, 1, 2, 3, 4, 5, 8, 13, 50, 100] {
+            for _ in 0..500 {
+                let p = Permutation::sample_involution_with(n, &mut rng);
+                assert_eq!(p.len(), n);
+                assert!(is_permutation(&p), "not a permutation for n = {n}: {p:?}");
+                assert!(p.is_involution(), "not an involution for n = {n}: {p:?}");
+            }
+        }
+    }
+
+    /// The 4 involutions of 3 elements (`I(3) = 4`) should be equiprobable: the
+    /// identity and the three transpositions.
+    #[test]
+    fn involution_is_uniform_for_n3() {
+        let mut rng = rand::rng();
+        let mut counts: HashMap<Permutation, u32> = HashMap::new();
+        let trials = 800_000;
+        for _ in 0..trials {
+            *counts
+                .entry(Permutation::sample_involution_with(3, &mut rng))
+                .or_default() += 1;
+        }
+
+        assert_eq!(
+            counts.len(),
+            4,
+            "expected all four involutions of 3 elements"
+        );
+        let expected = 1.0 / 4.0;
+        for (p, &c) in &counts {
+            let freq = c as f64 / trials as f64;
+            assert!(
+                (freq - expected).abs() < 0.01,
+                "involution {p:?} had frequency {freq}"
+            );
+        }
+    }
+
+    /// All 10 involutions of 4 elements (`I(4) = 10`) should appear with frequency ~1/10.
+    #[test]
+    fn involution_is_uniform_for_n4() {
+        let mut rng = rand::rng();
+        let mut counts: HashMap<Permutation, u32> = HashMap::new();
+        let trials = 1_000_000;
+        for _ in 0..trials {
+            *counts
+                .entry(Permutation::sample_involution_with(4, &mut rng))
+                .or_default() += 1;
+        }
+
+        assert_eq!(
+            counts.len(),
+            10,
+            "expected all ten involutions of 4 elements"
+        );
+        let expected = 1.0 / 10.0;
+        for (p, &c) in &counts {
+            let freq = c as f64 / trials as f64;
+            assert!(
+                (freq - expected).abs() < 0.01,
+                "involution {p:?} had frequency {freq}"
             );
         }
     }

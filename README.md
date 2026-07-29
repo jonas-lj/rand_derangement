@@ -2,8 +2,9 @@
 
 Uniform random sampling of combinatorial structures over `{0, 1, …, n-1}`:
 
-- **`permutation`** — random permutations and derangements, plus a `Permutation`
-  type with the usual operations (inverse, composition, cycles, parity, order).
+- **`permutation`** — random permutations, derangements, and involutions, plus a
+  `Permutation` type with the usual operations (inverse, composition, cycles,
+  parity, order).
 - **`partition`** — uniform random *set* partitions (Stam's urn algorithm).
 - **`subset`** — uniform random `k`-subsets / combinations (Floyd's algorithm).
 
@@ -22,6 +23,10 @@ let d = Permutation::sample_derangement(10);
 assert!(d.is_derangement());
 
 let p = Permutation::sample_permutation(10);
+
+// An involution is its own inverse (only fixed points and 2-cycles).
+let inv = Permutation::sample_involution(10);
+assert!(inv.is_involution());
 ```
 
 `Permutation` derefs to `[usize]` (its one-line map), so slice methods and
@@ -48,13 +53,14 @@ Derange or shuffle an arbitrary slice in place (no `Permutation` produced, no
 `Clone` bound):
 
 ```rust
-use rand_combinatorics::permutation::{derange, shuffle};
+use rand_combinatorics::permutation::{derange, involute, shuffle};
 
 let mut rng = rand::rng();
 let mut data = ['a', 'b', 'c', 'd', 'e'];
 
 shuffle(&mut data, &mut rng);   // uniform random permutation, in place
 derange(&mut data, &mut rng);   // no element stays where it was
+involute(&mut data, &mut rng);  // a random self-inverse rearrangement
 ```
 
 All samplers have an `_with(…, rng)` variant that takes an explicit RNG.

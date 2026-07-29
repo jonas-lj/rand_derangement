@@ -97,7 +97,7 @@ use rand_combinatorics::subset;
 let picks = subset::sample(52, 5); // 5 distinct indices from {0, ..., 51}
 assert_eq!(picks.len(), 5);
 
-let hand = subset::sample_from(vec!['A', 'K', 'Q', 'J', 'T', '9', '8', '7'], 5);
+let hand = subset::subset(vec!['A', 'K', 'Q', 'J', 'T', '9', '8', '7'], 5);
 assert_eq!(hand.len(), 5); // 5 of the given cards, in their original order
 ```
 

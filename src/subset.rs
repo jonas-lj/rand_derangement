@@ -2,7 +2,7 @@
 //!
 //! [`sample`] draws one of the `C(n, k)` subsets uniformly at random, returned in
 //! ascending order, via **Floyd's algorithm** — `O(k)` time and no rejection, so it
-//! stays cheap even when `n` is huge and `k` is small. [`sample_from`] does the same
+//! stays cheap even when `n` is huge and `k` is small. [`subset`] does the same
 //! over the elements of a given `Vec`.
 
 use rand::RngExt;
@@ -45,8 +45,8 @@ pub fn sample_with<R: RngExt + ?Sized>(n: usize, k: usize, rng: &mut R) -> Vec<u
 ///
 /// # Panics
 /// Panics if `k > elements.len()`.
-pub fn sample_from<T>(elements: Vec<T>, k: usize) -> Vec<T> {
-    sample_from_with(elements, k, &mut rand::rng())
+pub fn subset<T>(elements: Vec<T>, k: usize) -> Vec<T> {
+    subset_with(elements, k, &mut rand::rng())
 }
 
 /// Samples a uniformly random `k`-element subset of `elements` using the given
@@ -55,7 +55,7 @@ pub fn sample_from<T>(elements: Vec<T>, k: usize) -> Vec<T> {
 ///
 /// # Panics
 /// Panics if `k > elements.len()`.
-pub fn sample_from_with<T, R: RngExt + ?Sized>(elements: Vec<T>, k: usize, rng: &mut R) -> Vec<T> {
+pub fn subset_with<T, R: RngExt + ?Sized>(elements: Vec<T>, k: usize, rng: &mut R) -> Vec<T> {
     let indices = sample_with(elements.len(), k, rng); // sorted ascending
     let mut wanted = indices.into_iter().peekable();
     let mut subset = Vec::with_capacity(k);
@@ -105,11 +105,11 @@ mod tests {
     }
 
     #[test]
-    fn sample_from_selects_elements() {
+    fn subset_selects_elements() {
         let mut rng = rand::rng();
         let items: Vec<char> = ('a'..='j').collect(); // 10 distinct, ascending
         for k in 0..=items.len() {
-            let sub = sample_from_with(items.clone(), k, &mut rng);
+            let sub = subset_with(items.clone(), k, &mut rng);
             assert_eq!(sub.len(), k);
             // Chosen from `items`, distinct, in original (ascending) order.
             assert!(sub.iter().all(|&c| items.contains(&c)));

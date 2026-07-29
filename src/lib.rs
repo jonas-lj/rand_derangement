@@ -4,7 +4,7 @@
 //!   plus a [`Permutation`](permutation::Permutation) type with the usual
 //!   operations (inverse, composition, cycles, parity, order).
 //! - [`partition`] — uniform random set partitions of `{0, ..., n-1}` via Stam's
-//!   urn algorithm.
+//!   urn algorithm, produced lazily as a per-element block-index iterator.
 
 pub mod partition;
 pub mod permutation;

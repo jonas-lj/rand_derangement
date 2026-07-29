@@ -1,14 +1,20 @@
 //! Uniform random *set* partitions of `{0, 1, ..., n-1}`.
 //!
-//! A partition splits the set into non-empty, disjoint blocks; there are `B_n`
-//! (the Bell number) of them, and [`Partition::sample`] draws one uniformly.
+//! [`Partition`] is a lazy iterator. Sampling — [`Partition::sample_with`] — draws
+//! a partition uniformly at random (one of the `B_n` Bell-number many), and
+//! iterating it yields the block index of each element `0, 1, ..., n-1` in order.
+//!
+//! Indices are assigned in restricted-growth form: a new block appears only when
+//! its first element does, so they come out contiguous (`0`, then `1`, ...), every
+//! block is non-empty, and nothing is materialized. Group as you like by collecting
+//! or scattering into buckets on the fly.
 //!
 //! # Algorithm
-//! Stam's urn method: pick a number of colors `k` with probability proportional
-//! to `k^n / k!` (the distribution behind Dobinski's formula
-//! `B_n = (1/e) * sum_{k>=0} k^n / k!`), color the `n` elements independently and
-//! uniformly with one of `k` colors, and let the blocks be the color classes.
-//! Each partition then arises with probability exactly `1 / B_n`.
+//! Stam's urn method: pick a number of colors `k` with probability proportional to
+//! `k^n / k!` (the distribution behind Dobinski's formula
+//! `B_n = (1/e) * sum_{k>=0} k^n / k!`), then color the `n` elements independently
+//! and uniformly with one of `k` colors; the blocks are the color classes. Each
+//! partition then arises with probability exactly `1 / B_n`.
 //!
 //! # Reference
 //! A. J. Stam, "Generation of a random partition of a finite set by an urn model",
@@ -16,102 +22,79 @@
 //! <https://djalil.chafai.net/blog/2012/05/03/generating-uniform-random-partitions/>.
 
 use rand::RngExt;
+use std::iter::FusedIterator;
 
-/// A partition of the set `{0, 1, ..., n-1}` into non-empty blocks.
+/// A uniformly random set partition of `{0, 1, ..., n-1}`, produced lazily.
 ///
-/// Stored in restricted-growth form: [`assignment`](Partition::assignment)`[i]` is
-/// the block index of element `i`, with blocks numbered `0, 1, ...` in order of
-/// their smallest element. This form is canonical, so two `Partition`s are equal
-/// iff they describe the same partition.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Partition {
-    block: Vec<usize>,
-    blocks: usize,
+/// Iterating yields the block index of each element in order, as restricted-growth
+/// labels (contiguous from `0`, one new label per new block). Nothing is stored per
+/// element — only the color-to-block relabeling map, of size `k` (the sampled color
+/// count). See the [module docs](self) for the algorithm.
+pub struct Partition<'a, R: ?Sized> {
+    rng: &'a mut R,
+    /// Elements still to be colored.
+    remaining: usize,
+    /// Number of colors `k` sampled up front.
+    colors: usize,
+    /// `label[color]` is the block index assigned to `color`, or `usize::MAX` until
+    /// the color is first used.
+    label: Vec<usize>,
+    /// Next block index to hand out.
+    next_block: usize,
 }
 
-impl Partition {
-    /// Samples a uniformly random partition of `{0, 1, ..., n-1}`.
-    pub fn sample(n: usize) -> Partition {
-        Self::sample_with(n, &mut rand::rng())
-    }
-
+impl<'a, R: RngExt + ?Sized> Partition<'a, R> {
     /// Samples a uniformly random partition of `{0, 1, ..., n-1}` using the given
     /// random number generator, via Stam's urn algorithm.
-    pub fn sample_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Partition {
+    pub fn sample_with(n: usize, rng: &'a mut R) -> Partition<'a, R> {
         if n == 0 {
             return Partition {
-                block: Vec::new(),
-                blocks: 0,
+                rng,
+                remaining: 0,
+                colors: 0,
+                label: Vec::new(),
+                next_block: 0,
             };
         }
         let colors = sample_color_count(n, rng);
-
-        // Color each element uniformly in `0..colors`, relabeling to restricted-
-        // growth form (blocks numbered by first appearance) in a single pass.
-        let mut label = vec![usize::MAX; colors];
-        let mut block = Vec::with_capacity(n);
-        let mut blocks = 0;
-        for _ in 0..n {
-            let color = rng.random_range(0..colors);
-            if label[color] == usize::MAX {
-                label[color] = blocks;
-                blocks += 1;
-            }
-            block.push(label[color]);
+        Partition {
+            rng,
+            remaining: n,
+            colors,
+            label: vec![usize::MAX; colors],
+            next_block: 0,
         }
-        Partition { block, blocks }
     }
+}
 
-    /// The number of elements, `n`.
-    pub fn size(&self) -> usize {
-        self.block.len()
-    }
+impl<R: RngExt + ?Sized> Iterator for Partition<'_, R> {
+    type Item = usize;
 
-    /// Returns `true` iff there are no elements (`n == 0`).
-    pub fn is_empty(&self) -> bool {
-        self.block.is_empty()
-    }
-
-    /// The number of (non-empty) blocks.
-    pub fn num_blocks(&self) -> usize {
-        self.blocks
-    }
-
-    /// The restricted-growth assignment: `assignment()[i]` is the block index of
-    /// element `i`, with blocks numbered in order of their smallest element.
-    pub fn assignment(&self) -> &[usize] {
-        &self.block
-    }
-
-    /// Materializes the blocks, each as the ascending list of its elements.
-    pub fn blocks(&self) -> Vec<Vec<usize>> {
-        let mut result = vec![Vec::new(); self.blocks];
-        for (element, &b) in self.block.iter().enumerate() {
-            result[b].push(element);
+    fn next(&mut self) -> Option<usize> {
+        if self.remaining == 0 {
+            return None;
         }
-        result
+        self.remaining -= 1;
+
+        // Color this element, minting a fresh block index the first time a color
+        // is used (keeping the labels in restricted-growth form).
+        let color = self.rng.random_range(0..self.colors);
+        if self.label[color] == usize::MAX {
+            self.label[color] = self.next_block;
+            self.next_block += 1;
+        }
+        Some(self.label[color])
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
     }
 }
 
-/// Iterating a `Partition` yields the block index of each element `0, 1, ..., n-1`
-/// in order (its [`assignment`](Partition::assignment)). Together with
-/// [`num_blocks`](Partition::num_blocks) — known up front — this lets you scatter a
-/// set into pre-created buckets without ever materializing the blocks.
-impl IntoIterator for Partition {
-    type Item = usize;
-    type IntoIter = std::vec::IntoIter<usize>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.block.into_iter()
-    }
-}
-
-impl<'a> IntoIterator for &'a Partition {
-    type Item = usize;
-    type IntoIter = std::iter::Copied<std::slice::Iter<'a, usize>>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.block.iter().copied()
-    }
-}
+// The number of remaining elements is known exactly, even though the block count
+// is not known until iteration finishes.
+impl<R: RngExt + ?Sized> ExactSizeIterator for Partition<'_, R> {}
+impl<R: RngExt + ?Sized> FusedIterator for Partition<'_, R> {}
 
 /// Samples the number of colors `k >= 1` with probability proportional to
 /// `k^n / k!` (Stam's distribution). Works in log-space and stops once the weight
@@ -156,37 +139,36 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    /// Checks the restricted-growth invariant and internal consistency.
-    fn is_valid(p: &Partition) -> bool {
-        let a = p.assignment();
-        let mut max_seen = 0usize;
-        for (i, &b) in a.iter().enumerate() {
-            let bound = if i == 0 { 0 } else { max_seen + 1 };
-            if b > bound {
-                return false;
-            }
-            max_seen = max_seen.max(b);
-        }
-        let expected_blocks = if a.is_empty() { 0 } else { max_seen + 1 };
-        p.num_blocks() == expected_blocks
-    }
-
     #[test]
     fn samples_are_valid_partitions() {
         let mut rng = rand::rng();
         for n in [0usize, 1, 2, 3, 5, 10, 30] {
             for _ in 0..300 {
-                let p = Partition::sample_with(n, &mut rng);
-                assert_eq!(p.size(), n);
-                assert!(is_valid(&p), "invalid partition for n = {n}: {p:?}");
+                let assignment: Vec<usize> = Partition::sample_with(n, &mut rng).collect();
+                assert_eq!(assignment.len(), n);
 
-                // Blocks are non-empty and partition {0, ..., n-1} exactly.
-                let blocks = p.blocks();
-                assert_eq!(blocks.len(), p.num_blocks());
-                assert!(blocks.iter().all(|b| !b.is_empty()));
-                let mut all: Vec<usize> = blocks.into_iter().flatten().collect();
-                all.sort_unstable();
-                assert_eq!(all, (0..n).collect::<Vec<_>>());
+                // Restricted-growth invariant: `block[0] == 0` and each label is at
+                // most one past the running max, giving contiguous block indices.
+                let mut max = 0usize;
+                for (i, &b) in assignment.iter().enumerate() {
+                    let bound = if i == 0 { 0 } else { max + 1 };
+                    assert!(
+                        b <= bound,
+                        "not restricted-growth for n = {n}: {assignment:?}"
+                    );
+                    max = max.max(b);
+                }
+
+                // Every block index `0..num_blocks` appears, so all blocks are non-empty.
+                let num_blocks = if n == 0 { 0 } else { max + 1 };
+                let mut used = vec![false; num_blocks];
+                for &b in &assignment {
+                    used[b] = true;
+                }
+                assert!(
+                    used.iter().all(|&u| u),
+                    "empty block for n = {n}: {assignment:?}"
+                );
             }
         }
     }
@@ -194,60 +176,58 @@ mod tests {
     #[test]
     fn edge_cases() {
         let mut rng = rand::rng();
-
-        let empty = Partition::sample_with(0, &mut rng);
-        assert_eq!(empty.size(), 0);
-        assert_eq!(empty.num_blocks(), 0);
-        assert!(empty.is_empty());
-
-        // {0} has a single partition: one block.
-        let single = Partition::sample_with(1, &mut rng);
-        assert_eq!(single.num_blocks(), 1);
-        assert_eq!(single.blocks(), vec![vec![0]]);
+        // Empty set: no elements, no blocks.
+        assert_eq!(Partition::sample_with(0, &mut rng).count(), 0);
+        // Singleton: one element in block 0.
+        assert_eq!(
+            Partition::sample_with(1, &mut rng).collect::<Vec<_>>(),
+            vec![0]
+        );
     }
 
     #[test]
-    fn partition_iterates_block_indices() {
+    fn scatters_into_non_empty_buckets() {
         let mut rng = rand::rng();
-        for n in [0usize, 1, 4, 20] {
-            let p = Partition::sample_with(n, &mut rng);
+        let items = vec![10, 20, 30, 40, 50];
 
-            // By-ref iteration yields the assignment and leaves `p` usable.
-            let via_iter: Vec<usize> = (&p).into_iter().collect();
-            assert_eq!(via_iter, p.assignment());
-
-            // Scatter element indices into `num_blocks` pre-created buckets;
-            // this reproduces `blocks()`.
-            let mut buckets = vec![Vec::new(); p.num_blocks()];
-            for (element, block) in (0..n).zip(&p) {
-                buckets[block].push(element);
+        // Grow buckets on the fly: a new block index is always exactly `buckets.len()`.
+        let mut buckets: Vec<Vec<i32>> = Vec::new();
+        for (item, block) in items
+            .clone()
+            .into_iter()
+            .zip(Partition::sample_with(items.len(), &mut rng))
+        {
+            if block == buckets.len() {
+                buckets.push(Vec::new());
             }
-            assert_eq!(buckets, p.blocks());
-
-            // By-value iteration consumes and yields the same sequence.
-            assert_eq!(p.into_iter().collect::<Vec<_>>(), via_iter);
+            buckets[block].push(item);
         }
+
+        assert!(buckets.iter().all(|b| !b.is_empty()));
+        let mut all: Vec<i32> = buckets.into_iter().flatten().collect();
+        all.sort_unstable();
+        assert_eq!(all, items);
     }
 
     /// The 5 partitions of a 3-element set (`B_3 = 5`) should be equiprobable.
+    /// In restricted-growth form they are the strings [000], [001], [010], [011], [012].
     #[test]
     fn uniform_for_n3() {
         let mut rng = rand::rng();
-        let mut counts: HashMap<Partition, u32> = HashMap::new();
+        let mut counts: HashMap<Vec<usize>, u32> = HashMap::new();
         let trials = 600_000;
         for _ in 0..trials {
-            *counts
-                .entry(Partition::sample_with(3, &mut rng))
-                .or_default() += 1;
+            let assignment: Vec<usize> = Partition::sample_with(3, &mut rng).collect();
+            *counts.entry(assignment).or_default() += 1;
         }
 
         assert_eq!(counts.len(), 5, "expected all five partitions of a 3-set");
         let expected = 1.0 / 5.0;
-        for (p, &c) in &counts {
+        for (a, &c) in &counts {
             let freq = c as f64 / trials as f64;
             assert!(
                 (freq - expected).abs() < 0.01,
-                "partition {p:?} had frequency {freq}"
+                "partition {a:?} had frequency {freq}"
             );
         }
     }

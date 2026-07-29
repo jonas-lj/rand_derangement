@@ -65,13 +65,16 @@ non-empty blocks):
 use rand_combinatorics::partition::Partition;
 
 let items = vec![10, 20, 30, 40, 50];
-let p = Partition::sample(items.len());
+let mut rng = rand::rng();
 
-// `p` knows the block count up front and, when iterated, yields the block index of
-// each element in order — so you can scatter into pre-made buckets lazily, without
-// materializing the grouped blocks first (nice for large sets).
-let mut buckets: Vec<Vec<i32>> = vec![Vec::new(); p.num_blocks()];
-for (item, block) in items.into_iter().zip(&p) {
+// `Partition` is a lazy iterator: it yields each element's block index in order, as
+// restricted-growth labels (0, then 1, ...), so you can grow buckets on the fly and
+// never materialize the grouped blocks (nice for large sets). Blocks are non-empty.
+let mut buckets: Vec<Vec<i32>> = Vec::new();
+for (item, block) in items.into_iter().zip(Partition::sample_with(5, &mut rng)) {
+    if block == buckets.len() {
+        buckets.push(Vec::new());
+    }
     buckets[block].push(item);
 }
 ```

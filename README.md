@@ -62,8 +62,12 @@ Sample a uniform random set partition (one of the `Bₙ` ways to split the set i
 non-empty blocks):
 
 ```rust
-use rand_combinatorics::partition::Partition;
+use rand_combinatorics::partition::{partition_elements, Partition};
 
+// group a set of values into random blocks
+let blocks = partition_elements(vec![10, 20, 30, 40, 50], &mut rand::rng());
+
+// or sample the abstract partition of {0, ..., 4}
 let p = Partition::sample(5);
 println!("{} blocks: {:?}", p.num_blocks(), p.blocks());
 ```

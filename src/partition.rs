@@ -93,6 +93,21 @@ impl Partition {
     }
 }
 
+/// Randomly partitions `elements` into non-empty blocks, uniformly over all set
+/// partitions of them, consuming the input.
+///
+/// Equivalent to sampling a [`Partition`] of `{0, ..., elements.len()-1}` and
+/// grouping the elements by its blocks; each element keeps its position within its
+/// block. Returns no blocks for an empty input.
+pub fn partition_elements<T, R: RngExt + ?Sized>(elements: Vec<T>, rng: &mut R) -> Vec<Vec<T>> {
+    let partition = Partition::sample_with(elements.len(), rng);
+    let mut blocks: Vec<Vec<T>> = (0..partition.num_blocks()).map(|_| Vec::new()).collect();
+    for (element, &block) in elements.into_iter().zip(partition.assignment()) {
+        blocks[block].push(element);
+    }
+    blocks
+}
+
 /// Samples the number of colors `k >= 1` with probability proportional to
 /// `k^n / k!` (Stam's distribution). Works in log-space and stops once the weight
 /// has fallen negligibly below the peak, so the truncated tail is far below the
@@ -184,6 +199,27 @@ mod tests {
         let single = Partition::sample_with(1, &mut rng);
         assert_eq!(single.num_blocks(), 1);
         assert_eq!(single.blocks(), vec![vec![0]]);
+    }
+
+    #[test]
+    fn partition_elements_groups_all() {
+        let mut rng = rand::rng();
+        for n in [0usize, 1, 2, 5, 12] {
+            let elements: Vec<usize> = (0..n).map(|i| i * 10).collect();
+            let blocks = partition_elements(elements.clone(), &mut rng);
+
+            // No empty blocks; blocks exist iff there are elements.
+            assert!(
+                blocks.iter().all(|b| !b.is_empty()),
+                "empty block for n = {n}"
+            );
+            assert_eq!(blocks.is_empty(), n == 0);
+
+            // Every element appears exactly once, across all blocks.
+            let mut all: Vec<usize> = blocks.into_iter().flatten().collect();
+            all.sort_unstable();
+            assert_eq!(all, elements);
+        }
     }
 
     /// The 5 partitions of a 3-element set (`B_3 = 5`) should be equiprobable.

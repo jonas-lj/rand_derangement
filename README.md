@@ -80,12 +80,14 @@ for (item, block) in items.into_iter().zip(Partition::sample_with(5, &mut rng)) 
 }
 ```
 
-Sample a uniform random `k`-subset (combination), returned in ascending order:
+Sample a uniform random `k`-subset (combination) — also a lazy iterator, yielding
+the chosen indices (in Floyd's order, not sorted):
 
 ```rust
-use rand_combinatorics::subset;
+use rand_combinatorics::subset::Subset;
 
-let picks = subset::sample(52, 5); // 5 distinct indices from {0, ..., 51}
+let mut rng = rand::rng();
+let picks: Vec<usize> = Subset::sample_with(52, 5, &mut rng).collect(); // 5 of {0..51}
 assert_eq!(picks.len(), 5);
 ```
 

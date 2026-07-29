@@ -59,14 +59,6 @@ pub fn derange<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
 /// Rearranges `data` in place by a uniformly random *involution* of its positions,
 /// so the rearrangement is its own inverse: every element is either left in place or
 /// swapped with exactly one other.
-///
-/// Like [`derange`], elements are placed one at a time from the back. The current
-/// element becomes a fixed point with probability `I(m-1) / I(m)` — where `I(m)` is
-/// the number of involutions of `m` elements (the *telephone numbers*, satisfying
-/// `I(m) = I(m-1) + (m-1)·I(m-2)`) — otherwise it joins a 2-cycle with a uniformly
-/// random one of the remaining elements. These fixed-point probabilities follow the
-/// stable recursion `f(m) = 1 / (1 + (m-1)·f(m-1))`, so no big-integer arithmetic or
-/// division of large involution numbers is needed.
 pub fn involute<T, R: RngExt + ?Sized>(data: &mut [T], rng: &mut R) {
     let n = data.len();
     let fixed_point_prob = fixed_point_probabilities()

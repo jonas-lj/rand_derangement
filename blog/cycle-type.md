@@ -28,15 +28,14 @@ pub fn sample_cycle_type_with<R: RngExt + ?Sized, F: Fn(usize) -> bool>(
     let mut pool = (0..n).collect::<Vec<usize>>();
     while !pool.is_empty() {
         // Give the largest remaining element a cycle of length k, chosen with
-        // probability proportional to (r-1)(r-2)...(r-k+1) * a[r-k], then splice in
-        // its k-1 random partners with the same swap-chain trick used for derangements.
+        // probability proportional to (r-1)(r-2)...(r-k+1) * a[r-k], then splice in its
+        // k-1 random partners along a swap chain, as for derangements and involutions.
         let k = sample_cycle_length(pool.len(), &allowed, &log_count, rng);
-        let mut prev = pool.pop().unwrap();
-        for _ in 1..k {
+        (1..k).fold(pool.pop().unwrap(), |prev, _| {
             let next = pool.swap_remove(rng.random_range(..pool.len()));
             permutation.swap(prev, next);
-            prev = next;
-        }
+            next
+        });
     }
     Permutation(permutation)
 }

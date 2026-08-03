@@ -199,20 +199,18 @@ impl Permutation {
             "no permutation of n = {n} exists with the given cycle lengths"
         );
 
-        let mut permutation = vec![0usize; n];
+        let mut permutation = (0..n).collect::<Vec<usize>>();
         let mut pool = (0..n).collect::<Vec<usize>>();
         while !pool.is_empty() {
-            let length = sample_cycle_length(pool.len(), &allowed, &log_count, rng);
-            // Build the cycle from an anchor plus `length - 1` random partners, in
-            // order: anchor -> p1 -> ... -> p_{length-1} -> anchor.
-            let anchor = pool.pop().unwrap();
-            let mut prev = anchor;
-            for _ in 1..length {
-                let partner = pool.swap_remove(rng.random_range(..pool.len()));
-                permutation[prev] = partner;
-                prev = partner;
+            // Give the largest remaining element a cycle of length `k`, splicing in its
+            // `k - 1` partners with the same swap-chain trick as `derange`/`involute`.
+            let k = sample_cycle_length(pool.len(), &allowed, &log_count, rng);
+            let mut prev = pool.pop().unwrap();
+            for _ in 1..k {
+                let next = pool.swap_remove(rng.random_range(..pool.len()));
+                permutation.swap(prev, next);
+                prev = next;
             }
-            permutation[prev] = anchor;
         }
         Permutation(permutation)
     }

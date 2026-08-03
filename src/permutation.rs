@@ -5,12 +5,15 @@
 //!   [`Permutation::sample_involution`] draw a uniformly random permutation,
 //!   derangement, or involution.
 //! - [`shuffle`] / [`derange`] / [`involute`] do the same in place on an arbitrary slice.
+//! - [`Permutation::sample_cycle_type`] generalizes all of these: it draws a uniform
+//!   permutation whose cycle lengths satisfy an arbitrary predicate.
 //! - [`Permutation`] is a validated wrapper offering [`apply`](Permutation::apply),
 //!   [`inverse`](Permutation::inverse), [`cycles`](Permutation::cycles), and more.
 //!
 //! Permutations use a Fisher–Yates shuffle; derangements use a variant of the
 //! Martínez–Panholzer–Prodinger algorithm (see [`derange`] for the reference); and
-//! involutions use the analogous recursive scheme (see [`involute`]).
+//! involutions use the analogous recursive scheme (see [`involute`]). All three are
+//! special cases of the cycle-length recurrence behind [`Permutation::sample_cycle_type`].
 
 use rand::RngExt;
 use std::iter::successors;
@@ -157,6 +160,60 @@ impl Permutation {
     pub fn sample_involution_with<R: RngExt + ?Sized>(n: usize, rng: &mut R) -> Permutation {
         let mut permutation = (0..n).collect::<Vec<usize>>();
         involute(&mut permutation, rng);
+        Permutation(permutation)
+    }
+
+    /// Samples a uniformly random permutation of `{0, 1, ..., n-1}` whose cycle
+    /// lengths all satisfy `allowed` (that is, `allowed(len)` holds for the length of
+    /// every cycle). This is the common generalization of the samplers above:
+    /// `|_| true` gives an arbitrary permutation, `|k| k >= 2` a derangement, and
+    /// `|k| k <= 2` an involution — though those three have faster dedicated samplers.
+    ///
+    /// # Panics
+    /// Panics if `n >= 1` but no such permutation exists (for example a fixed-point-free
+    /// involution, `|k| k == 2`, of an odd number of elements).
+    pub fn sample_cycle_type<F: Fn(usize) -> bool>(n: usize, allowed: F) -> Permutation {
+        Self::sample_cycle_type_with(n, allowed, &mut rand::rng())
+    }
+
+    /// Samples a uniformly random permutation of `{0, 1, ..., n-1}` whose cycle
+    /// lengths all satisfy `allowed`, using the given random number generator.
+    ///
+    /// The largest remaining element is placed in a cycle of length `k` with
+    /// probability proportional to `(r-1)(r-2)···(r-k+1) · a[r-k]`, where `r` is the
+    /// number of elements left and `a[m]` counts the valid permutations of `m`
+    /// elements; its `k-1` cycle partners are then drawn uniformly. Each valid
+    /// permutation results with probability exactly `1 / a[n]`. The counts `a[m]` are
+    /// evaluated in log-space, so no big integers are needed however large `n` is.
+    ///
+    /// # Panics
+    /// Panics if `n >= 1` but no such permutation exists.
+    pub fn sample_cycle_type_with<R: RngExt + ?Sized, F: Fn(usize) -> bool>(
+        n: usize,
+        allowed: F,
+        rng: &mut R,
+    ) -> Permutation {
+        let log_count = log_cycle_type_counts(n, &allowed);
+        assert!(
+            n == 0 || log_count[n].is_finite(),
+            "no permutation of n = {n} exists with the given cycle lengths"
+        );
+
+        let mut permutation = vec![0usize; n];
+        let mut pool = (0..n).collect::<Vec<usize>>();
+        while !pool.is_empty() {
+            let length = sample_cycle_length(pool.len(), &allowed, &log_count, rng);
+            // Build the cycle from an anchor plus `length - 1` random partners, in
+            // order: anchor -> p1 -> ... -> p_{length-1} -> anchor.
+            let anchor = pool.pop().unwrap();
+            let mut prev = anchor;
+            for _ in 1..length {
+                let partner = pool.swap_remove(rng.random_range(..pool.len()));
+                permutation[prev] = partner;
+                prev = partner;
+            }
+            permutation[prev] = anchor;
+        }
         Permutation(permutation)
     }
 
@@ -432,6 +489,81 @@ fn fixed_point_probabilities() -> impl Iterator<Item = f64> {
         Some((m, 1.0 / (1.0 + (m - 1) as f64 * prev)))
     })
     .map(|(_, p)| p)
+}
+
+/// Natural logs of the cycle-type counts: `log_cycle_type_counts(n, allowed)[m]` is
+/// `ln a[m]`, where `a[m]` is the number of permutations of `m` elements whose cycle
+/// lengths all satisfy `allowed` (`-inf` when there are none, i.e. `a[m] == 0`). It
+/// follows the recurrence `a[m] = Σ_{allowed k ≤ m} (m-1)(m-2)···(m-k+1) · a[m-k]` —
+/// place the largest element in a `k`-cycle with `k-1` of the others — evaluated in
+/// log-space, so it needs no big integers and never overflows however large `n` is.
+fn log_cycle_type_counts<F: Fn(usize) -> bool>(n: usize, allowed: &F) -> Vec<f64> {
+    let mut log_count = vec![f64::NEG_INFINITY; n + 1];
+    log_count[0] = 0.0; // the empty set has exactly one (empty) permutation
+    for m in 1..=n {
+        let mut terms = Vec::new();
+        // `log_falling` tracks ln of the falling factorial (m-1)···(m-k+1) as k grows.
+        let mut log_falling = 0.0;
+        for k in 1..=m {
+            if allowed(k) && log_count[m - k].is_finite() {
+                terms.push(log_falling + log_count[m - k]);
+            }
+            if k < m {
+                log_falling += ((m - k) as f64).ln();
+            }
+        }
+        log_count[m] = log_sum_exp(&terms);
+    }
+    log_count
+}
+
+/// Samples the length of the next cycle when `r` elements remain, giving length `k`
+/// probability proportional to `(r-1)(r-2)···(r-k+1) · a[r-k]` over the allowed `k`
+/// (the terms of the recurrence in [`log_cycle_type_counts`]). Only called when
+/// `a[r] > 0`, so at least one length has positive weight.
+fn sample_cycle_length<R: RngExt + ?Sized, F: Fn(usize) -> bool>(
+    r: usize,
+    allowed: &F,
+    log_count: &[f64],
+    rng: &mut R,
+) -> usize {
+    let mut lengths = Vec::new();
+    let mut log_weights = Vec::new();
+    let mut log_falling = 0.0;
+    for k in 1..=r {
+        if allowed(k) && log_count[r - k].is_finite() {
+            lengths.push(k);
+            log_weights.push(log_falling + log_count[r - k]);
+        }
+        if k < r {
+            log_falling += ((r - k) as f64).ln();
+        }
+    }
+
+    // Sample proportional to exp(log_weight - max).
+    let max = log_weights
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let total: f64 = log_weights.iter().map(|&w| (w - max).exp()).sum();
+    let mut u = rng.random_range(0.0..total);
+    for (i, &w) in log_weights.iter().enumerate() {
+        u -= (w - max).exp();
+        if u < 0.0 {
+            return lengths[i];
+        }
+    }
+    *lengths.last().unwrap() // numerical fallback (essentially unreachable)
+}
+
+/// `ln(Σ exp(x))`, computed stably by factoring out the maximum; `-inf` for an empty
+/// slice (an empty sum).
+fn log_sum_exp(xs: &[f64]) -> f64 {
+    let max = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if max == f64::NEG_INFINITY {
+        return f64::NEG_INFINITY;
+    }
+    max + xs.iter().map(|&x| (x - max).exp()).sum::<f64>().ln()
 }
 
 /// Returns `true` iff `p` is a permutation of `{0, 1, ..., p.len()-1}`, i.e. every
@@ -862,6 +994,89 @@ mod tests {
             assert!(
                 (freq - expected).abs() < 0.01,
                 "involution {p:?} had frequency {freq}"
+            );
+        }
+    }
+
+    #[test]
+    fn cycle_type_samples_respect_the_predicate() {
+        let mut rng = rand::rng();
+        let mut check = |allowed: fn(usize) -> bool, label: &str| {
+            for n in [0usize, 2, 3, 4, 6, 9, 12, 30] {
+                // Skip any n for which no such permutation exists.
+                if n >= 1 && log_cycle_type_counts(n, &allowed)[n].is_infinite() {
+                    continue;
+                }
+                for _ in 0..200 {
+                    let p = Permutation::sample_cycle_type_with(n, allowed, &mut rng);
+                    assert_eq!(p.len(), n);
+                    assert!(
+                        is_permutation(&p),
+                        "not a permutation ({label}, n = {n}): {p:?}"
+                    );
+                    assert!(
+                        p.cycles().all(|c| allowed(c.len())),
+                        "cycle length violates {label} for n = {n}: {p:?}"
+                    );
+                }
+            }
+        };
+        check(|_k| true, "unrestricted");
+        check(|k| k >= 2, "derangement");
+        check(|k| k <= 2, "involution");
+        check(|k| k <= 3, "cycles of length at most 3");
+        check(|k| k == 1 || k == 3, "fixed points and 3-cycles");
+    }
+
+    #[test]
+    fn cycle_type_recovers_the_special_cases() {
+        let mut rng = rand::rng();
+        for n in [0usize, 2, 3, 4, 5, 8, 20] {
+            let derangement = Permutation::sample_cycle_type_with(n, |k| k >= 2, &mut rng);
+            assert!(
+                derangement.is_derangement(),
+                "not a derangement for n = {n}"
+            );
+
+            let involution = Permutation::sample_cycle_type_with(n, |k| k <= 2, &mut rng);
+            assert!(involution.is_involution(), "not an involution for n = {n}");
+
+            // Fixed-point-free involutions (perfect matchings) need an even n.
+            let matching = Permutation::sample_cycle_type_with(2 * n, |k| k == 2, &mut rng);
+            assert!(matching.is_involution() && matching.is_derangement());
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "no permutation of n = 3")]
+    fn cycle_type_impossible_panics() {
+        // No fixed-point-free involution of an odd number of elements.
+        Permutation::sample_cycle_type_with(3, |k| k == 2, &mut rand::rng());
+    }
+
+    /// Permutations of 4 elements with cycle lengths in `{1, 3}` — the identity and
+    /// the eight 3-cycles-with-a-fixed-point — number 9 and should be equiprobable.
+    #[test]
+    fn cycle_type_is_uniform_for_n4() {
+        let mut rng = rand::rng();
+        let mut counts: HashMap<Permutation, u32> = HashMap::new();
+        let trials = 900_000;
+        for _ in 0..trials {
+            let p = Permutation::sample_cycle_type_with(4, |k| k == 1 || k == 3, &mut rng);
+            *counts.entry(p).or_default() += 1;
+        }
+
+        assert_eq!(
+            counts.len(),
+            9,
+            "expected all nine such permutations of 4 elements"
+        );
+        let expected = 1.0 / 9.0;
+        for (p, &c) in &counts {
+            let freq = c as f64 / trials as f64;
+            assert!(
+                (freq - expected).abs() < 0.01,
+                "permutation {p:?} had frequency {freq}"
             );
         }
     }

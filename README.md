@@ -29,6 +29,20 @@ let inv = Permutation::sample_involution(10);
 assert!(inv.is_involution());
 ```
 
+Derangements and involutions are both special cases of one sampler: a uniform
+permutation whose cycle lengths satisfy an arbitrary predicate. Its per-step
+probabilities come from the recurrence for how many such permutations exist,
+evaluated in log-space so nothing overflows however large `n` gets.
+
+```rust
+use rand_combinatorics::permutation::Permutation;
+
+let derangement = Permutation::sample_cycle_type(10, |k| k >= 2);   // no fixed points
+let involution  = Permutation::sample_cycle_type(10, |k| k <= 2);   // fixed points + 2-cycles
+let matching    = Permutation::sample_cycle_type(10, |k| k == 2);   // perfect matching (even n)
+let short       = Permutation::sample_cycle_type(10, |k| k <= 3);   // cycles of length at most 3
+```
+
 `Permutation` derefs to `[usize]` (its one-line map), so slice methods and
 indexing work directly, and it offers the usual group operations:
 
